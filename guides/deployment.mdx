@@ -1,0 +1,216 @@
+---
+title: 'Deploying the API Registro Pendientes'
+description: 'Step-by-step guide to building, configuring, and running the API in production with PostgreSQL, file storage, and connection pool tuning.'
+keywords: ['deployment', 'production', 'spring boot', 'postgresql', 'jar', 'java 21']
+---
+
+Running the API Registro Pendientes in production requires Java 21, a PostgreSQL database, and a writable directory for file uploads. This guide walks you through building the application artifact, supplying the required configuration, and verifying that the service is healthy.
+
+## Prerequisites
+
+Before deploying, make sure the target machine has the following available:
+
+- **Java 21** — the application is compiled for Java 21 and will not start on earlier versions.
+- **PostgreSQL** — a running instance accessible from the deployment host. The API uses JDBC with the `org.postgresql.Driver`.
+- A **writable filesystem** path for uploaded images (the `uploads/` directory relative to the working directory).
+
+<Info>
+  The database schema is managed automatically via `spring.jpa.hibernate.ddl-auto=update`. Tables are created or altered on startup — no manual migration step is needed for a first-time deploy.
+</Info>
+
+## Building the application
+
+<Steps>
+  <Step title="Clone the repository and navigate to the project root">
+    Ensure the Maven wrapper script is executable before running any build commands.
+
+    ```bash
+    chmod +x mvnw
+    ```
+  </Step>
+
+  <Step title="Build the executable JAR">
+    Use the Maven wrapper to compile the code and package it as a single self-contained JAR. The `-DskipTests` flag speeds up the build when tests have already been validated in CI.
+
+    ```bash
+    ./mvnw clean package -DskipTests
+    ```
+
+    The output artifact will be written to:
+
+    ```
+    target/apiregistropendientes-0.0.1-SNAPSHOT.jar
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+The application reads its settings from `application.properties` (or `application.yml`) bundled inside the JAR. You must override the database connection properties at runtime — never bake real credentials into the committed source file.
+
+### Required properties
+
+| Property | Description |
+|---|---|
+| `spring.datasource.url` | JDBC URL of your PostgreSQL instance |
+| `spring.datasource.username` | Database username |
+| `spring.datasource.password` | Database password |
+
+### Supplying overrides
+
+<Tabs>
+  <Tab title="Command-line arguments">
+    Pass property overrides directly to the `java` command. This is the simplest approach for scripted deployments.
+
+    ```bash
+    java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar \
+      --spring.datasource.url=jdbc:postgresql://db-host:5432/mydb \
+      --spring.datasource.username=myuser \
+      --spring.datasource.password=mypassword
+    ```
+  </Tab>
+  <Tab title="Environment variables">
+    Spring Boot maps environment variables to properties using relaxed binding. Set the following before starting the process:
+
+    ```bash
+    export SPRING_DATASOURCE_URL=jdbc:postgresql://db-host:5432/mydb
+    export SPRING_DATASOURCE_USERNAME=myuser
+    export SPRING_DATASOURCE_PASSWORD=mypassword
+
+    java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar
+    ```
+  </Tab>
+  <Tab title="External properties file">
+    Place an `application.properties` file in the same directory as the JAR. Spring Boot automatically picks it up, and values there override those inside the JAR.
+
+    ```properties
+    spring.datasource.url=jdbc:postgresql://db-host:5432/mydb
+    spring.datasource.username=myuser
+    spring.datasource.password=mypassword
+    ```
+
+    Then start the application normally:
+
+    ```bash
+    java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Never commit database credentials to version control. Use environment variables or a secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault) to inject credentials at deploy time.
+</Warning>
+
+## Running the application
+
+Start the JAR from the directory where the `uploads/` folder should live (typically the deployment root):
+
+```bash
+java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar
+```
+
+The server binds to `0.0.0.0:8080` by default, making it reachable on all network interfaces.
+
+To run as a background process using `nohup`:
+
+```bash
+nohup java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar \
+  --spring.datasource.url=jdbc:postgresql://db-host:5432/mydb \
+  --spring.datasource.username=myuser \
+  --spring.datasource.password=mypassword \
+  > app.log 2>&1 &
+```
+
+## File upload storage
+
+Uploaded images are stored on the local filesystem under the `uploads/notas/` directory, relative to the process working directory. The directory is created automatically on first use, but the parent path must be writable by the OS user running the process.
+
+The static resource handler exposes the directory at `/uploads/**`:
+
+```
+GET http://your-host:8080/uploads/notas/example.jpg
+```
+
+<Note>
+  For production deployments behind a load balancer or with multiple instances, replace the local `uploads/` directory with a shared volume or object storage (e.g., S3-compatible). Update `WebConfig` to point to the new resource location accordingly.
+</Note>
+
+### File size limits
+
+The following limits are configured by default:
+
+| Setting | Value |
+|---|---|
+| Max single file size | 50 MB |
+| Max request size | 50 MB |
+
+To override these at runtime:
+
+```bash
+java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar \
+  --spring.servlet.multipart.max-file-size=100MB \
+  --spring.servlet.multipart.max-request-size=100MB
+```
+
+## Connection pool
+
+The API uses HikariCP with a deliberately small pool configuration, suited for managed database plans with limited connection quotas:
+
+| Setting | Value | Notes |
+|---|---|---|
+| `maximum-pool-size` | 5 | Hard cap on concurrent DB connections |
+| `minimum-idle` | 1 | Keeps one connection warm |
+| `idle-timeout` | 30 s | Idle connections are released after 30 seconds |
+| `max-lifetime` | 30 min | Connections are recycled every 30 minutes |
+| `connection-timeout` | 30 s | Request fails if no connection is available within 30 seconds |
+
+<Warning>
+  With a pool of 5, high-concurrency deployments may queue or timeout under load. If your database plan supports it, increase `spring.datasource.hikari.maximum-pool-size` via command-line override.
+</Warning>
+
+## Health check
+
+The API is ready to serve traffic when port 8080 responds to HTTP requests. A simple check:
+
+```bash
+curl -I http://your-host:8080/swagger-ui/index.html
+```
+
+A `200 OK` response confirms the application started successfully.
+
+For automated health checks (e.g., in Docker or a load balancer), target the Swagger UI or any public endpoint:
+
+```
+http://your-host:8080/swagger-ui/index.html
+```
+
+## API documentation
+
+The interactive Swagger UI is available at:
+
+```
+http://your-host:8080/swagger-ui/index.html
+```
+
+Use it to explore all available endpoints, inspect request/response schemas, and test calls directly from the browser.
+
+<Tip>
+  In production, consider restricting access to the Swagger UI via a reverse proxy (e.g., NGINX) so it is only reachable from internal networks.
+</Tip>
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Build" icon="hammer">
+    `./mvnw clean package -DskipTests` — produces the runnable JAR in `target/`.
+  </Card>
+  <Card title="Configure" icon="sliders">
+    Supply `spring.datasource.url`, `username`, and `password` via command-line args or environment variables.
+  </Card>
+  <Card title="Run" icon="play">
+    `java -jar target/apiregistropendientes-0.0.1-SNAPSHOT.jar` — binds to port 8080.
+  </Card>
+  <Card title="Verify" icon="circle-check">
+    Hit `http://your-host:8080/swagger-ui/index.html` — a 200 response means the API is live.
+  </Card>
+</CardGroup>

@@ -1,133 +1,59 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "API Registro Pendientes: ISP Field Work Order Management"
+description: "REST API for managing ISP field operations — work orders, technician assignments, client records, payments, and real-time notifications."
 ---
 
-## Setting up
+API Registro Pendientes is a Spring Boot REST API built for internet service providers to manage field work orders (pendientes), track technician activity, record payments, and push real-time notifications to mobile and web clients. All endpoints are secured with JWT bearer tokens and documented via Swagger UI.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first authenticated API call in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Learn how to obtain and use JWT bearer tokens.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/pendientes">
+    Understand work orders, states, and permissions.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/auth">
+    Full endpoint documentation with request and response schemas.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Manage work orders" icon="clipboard-list" href="/api/pendientes">
+    Create, assign, track, and close field work orders across five types: fault repair, internet installation, camera installation, device pickup, and relocation.
+  </Card>
+  <Card title="Track technician time" icon="clock" href="/api/pendientes-tiempos">
+    Open and close time-tracking sessions per technician per work order, with start/end timestamps and session descriptions.
+  </Card>
+  <Card title="Real-time notifications" icon="bell" href="/guides/websockets">
+    Subscribe to WebSocket topics over STOMP for instant updates when work orders are assigned, postponed, or completed.
+  </Card>
+  <Card title="Upload field notes" icon="image" href="/guides/file-uploads">
+    Technicians can attach notes and photos to work orders; images are uploaded via multipart form and served statically.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## How it works
 
-## Make your content agent ready
+<Steps>
+  <Step title="Authenticate">
+    Call `POST /auth` with your DNI and password to receive a JWT bearer token.
+  </Step>
+  <Step title="Create a work order">
+    Call `POST /api/pendientes` with client ID, type, priority, and location details.
+  </Step>
+  <Step title="Assign a technician">
+    Call `PUT /api/pendientes/{id}/asignar` with the employee ID to move the order to `ASIGNADO` state.
+  </Step>
+  <Step title="Track progress">
+    The technician advances state through `EN_PROGRESO`, `POR_VALIDAR`, and finally `FINALIZADO` using `PUT /api/pendientes/{id}/estado`.
+  </Step>
+</Steps>
 
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+  All endpoints except `/auth/**` and `/app/**` require a valid JWT bearer token in the `Authorization` header. See [Authentication](/authentication) for details.
+</Note>

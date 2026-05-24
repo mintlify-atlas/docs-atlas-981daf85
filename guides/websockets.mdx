@@ -1,0 +1,314 @@
+---
+title: 'Real-Time Notifications via WebSocket'
+description: 'Connect to the STOMP-over-WebSocket server, subscribe to per-user notification topics, and handle incoming messages with SockJS fallback support.'
+keywords: ['websocket', 'stomp', 'sockjs', 'notifications', 'real-time', 'spring boot']
+---
+
+The API Registro Pendientes pushes real-time notifications to connected clients using STOMP over WebSocket, with a SockJS fallback for environments where native WebSocket connections are blocked. Each authenticated user subscribes to their own topic and receives typed notification messages as field work order events occur.
+
+## Overview
+
+The server uses Spring's `@EnableWebSocketMessageBroker` with a simple in-memory broker. The architecture is:
+
+- **Transport**: WebSocket (native), with SockJS HTTP fallback
+- **Protocol**: STOMP (Simple Text Oriented Messaging Protocol)
+- **Broker destinations**: `/topic/**` — server-to-client broadcasts
+- **Application destinations**: `/app/**` — client-to-server messages
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Client->>Server: HTTP upgrade → WebSocket (/ws)
+    Client->>Server: STOMP CONNECT (Authorization header)
+    Server-->>Client: STOMP CONNECTED
+    Client->>Server: STOMP SUBSCRIBE /topic/usuario/{userId}
+    Note over Server: Work order event occurs
+    Server-->>Client: STOMP MESSAGE (JSON notification)
+```
+
+## Connection endpoint
+
+| Detail | Value |
+|---|---|
+| SockJS URL | `http://host:8080/ws` |
+| Native WebSocket | `ws://host:8080/ws` |
+| Allowed origins | `*` (all origins permitted) |
+
+<Note>
+  Always use the SockJS URL (HTTP scheme) when constructing the `SockJS` client — the library negotiates the best available transport automatically, including native WebSocket where available.
+</Note>
+
+## Installing client libraries
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @stomp/stompjs sockjs-client
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @stomp/stompjs sockjs-client
+    ```
+  </Tab>
+  <Tab title="CDN">
+    ```html
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs/bundles/stomp.umd.min.js"></script>
+    ```
+  </Tab>
+</Tabs>
+
+## Connecting and subscribing
+
+<Steps>
+  <Step title="Create the STOMP client">
+    Instantiate a `Client` with a `webSocketFactory` that returns a SockJS connection. Pass your JWT in the `connectHeaders` so the server can identify the user.
+
+    ```javascript
+    import { Client } from '@stomp/stompjs';
+    import SockJS from 'sockjs-client';
+
+    const client = new Client({
+      webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+      connectHeaders: {
+        Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9...'
+      },
+      reconnectDelay: 5000
+    });
+    ```
+  </Step>
+
+  <Step title="Subscribe to the user notification topic">
+    Inside the `onConnect` callback, subscribe to `/topic/usuario/{userId}`. Replace `userId` with the authenticated user's ID.
+
+    ```javascript
+    client.onConnect = () => {
+      client.subscribe(`/topic/usuario/${userId}`, (message) => {
+        const notification = JSON.parse(message.body);
+        console.log('New notification:', notification);
+      });
+    };
+    ```
+  </Step>
+
+  <Step title="Activate the client">
+    Call `activate()` to open the connection. The client connects, sends the STOMP `CONNECT` frame with your headers, and fires `onConnect` when the handshake completes.
+
+    ```javascript
+    client.activate();
+    ```
+  </Step>
+
+  <Step title="Deactivate when done">
+    Always deactivate the client when the component unmounts or the user logs out to release the connection.
+
+    ```javascript
+    client.deactivate();
+    ```
+  </Step>
+</Steps>
+
+## Full JavaScript example
+
+```javascript
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
+
+const userId = 42; // authenticated user's ID
+
+const client = new Client({
+  webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+  connectHeaders: {
+    Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9...'
+  },
+  onConnect: () => {
+    client.subscribe(`/topic/usuario/${userId}`, (message) => {
+      const notification = JSON.parse(message.body);
+      console.log('New notification:', notification);
+      // handle notification...
+    });
+  },
+  onDisconnect: () => console.log('Disconnected'),
+  onStompError: (frame) => {
+    console.error('STOMP error:', frame.headers['message']);
+  },
+  reconnectDelay: 5000
+});
+
+client.activate();
+```
+
+## Notification message structure
+
+Every message published to `/topic/usuario/{userId}` is a JSON object with the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | number | Unique notification identifier |
+| `titulo` | string | Short notification title |
+| `mensaje` | string | Full notification body text |
+| `tipo` | string | Severity level — see values below |
+| `estado` | string | Read state — see values below |
+| `fechaCreacion` | string | ISO 8601 timestamp of when the notification was created |
+| `usuarioId` | number | ID of the user this notification belongs to |
+
+### Example payload
+
+```json
+{
+  "id": 1023,
+  "titulo": "Orden asignada",
+  "mensaje": "Se te ha asignado la orden de trabajo #487.",
+  "tipo": "INFO",
+  "estado": "NO_LEIDO",
+  "fechaCreacion": "2026-05-24T10:15:30",
+  "usuarioId": 42
+}
+```
+
+### `tipo` values
+
+| Value | Meaning |
+|---|---|
+| `INFO` | Informational — no action required |
+| `SUCCESS` | A task or operation completed successfully |
+| `WARNING` | Something may need attention |
+| `ERROR` | An error occurred that requires action |
+
+### `estado` values
+
+| Value | Meaning |
+|---|---|
+| `NO_LEIDO` | Notification has not been read yet |
+| `LEIDO` | Notification has been marked as read |
+
+## Authentication
+
+The WebSocket endpoint does not enforce authentication at the transport level, but your backend logic is expected to validate the token passed in `connectHeaders`. Two approaches are supported:
+
+<Tabs>
+  <Tab title="STOMP connect headers (recommended)">
+    Pass the JWT as an `Authorization` header in the STOMP `CONNECT` frame. This is the preferred approach because the token travels over the encrypted WebSocket frame, not in the URL.
+
+    ```javascript
+    const client = new Client({
+      webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+      connectHeaders: {
+        Authorization: 'Bearer YOUR_JWT_TOKEN'
+      },
+      // ...
+    });
+    ```
+  </Tab>
+  <Tab title="Query parameter">
+    Append the token as a query parameter on the SockJS URL. Use this only when you cannot control STOMP headers (e.g., some embedded clients).
+
+    ```javascript
+    const client = new Client({
+      webSocketFactory: () =>
+        new SockJS(`http://localhost:8080/ws?token=YOUR_JWT_TOKEN`),
+      // ...
+    });
+    ```
+
+    <Warning>
+      Query parameters appear in server access logs and browser history. Prefer STOMP headers whenever possible.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Error handling and reconnection
+
+### Automatic reconnection
+
+Set `reconnectDelay` (in milliseconds) to have the client automatically attempt to reconnect after a dropped connection. A value of `5000` retries every 5 seconds:
+
+```javascript
+const client = new Client({
+  // ...
+  reconnectDelay: 5000
+});
+```
+
+### Handling STOMP errors
+
+Use `onStompError` to catch protocol-level errors such as authentication failures:
+
+```javascript
+client.onStompError = (frame) => {
+  const errorMessage = frame.headers['message'];
+  if (errorMessage?.includes('Unauthorized')) {
+    // Token expired — refresh and reconnect
+    client.connectHeaders.Authorization = `Bearer ${getNewToken()}`;
+  }
+  console.error('STOMP error:', errorMessage);
+};
+```
+
+### Handling WebSocket close events
+
+```javascript
+client.onWebSocketClose = (event) => {
+  console.warn('WebSocket closed, code:', event.code);
+};
+```
+
+<Tip>
+  For production applications, implement exponential backoff by dynamically increasing `reconnectDelay` after successive failures, capping at a maximum (e.g., 30 seconds) to avoid overwhelming the server.
+</Tip>
+
+## Sending messages to the server
+
+To send a STOMP message to the server (e.g., to trigger or acknowledge a notification), publish to the `/app/notificacion` destination:
+
+```javascript
+client.publish({
+  destination: '/app/notificacion',
+  body: JSON.stringify({
+    usuarioId: 42,
+    titulo: 'Test',
+    mensaje: 'Hello from client'
+  })
+});
+```
+
+<Note>
+  The `/app` prefix maps to the application destination prefix configured in `WebSocketConfig`. The server routes messages sent to `/app/notificacion` through the `NotificacionSocketController`.
+</Note>
+
+## React integration example
+
+```javascript
+import { useEffect, useRef } from 'react';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
+
+function useNotifications(userId, token, onNotification) {
+  const clientRef = useRef(null);
+
+  useEffect(() => {
+    const client = new Client({
+      webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+      connectHeaders: { Authorization: `Bearer ${token}` },
+      onConnect: () => {
+        client.subscribe(`/topic/usuario/${userId}`, (message) => {
+          onNotification(JSON.parse(message.body));
+        });
+      },
+      reconnectDelay: 5000
+    });
+
+    client.activate();
+    clientRef.current = client;
+
+    return () => {
+      client.deactivate();
+    };
+  }, [userId, token]);
+
+  return clientRef;
+}
+```

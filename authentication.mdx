@@ -1,0 +1,276 @@
+---
+title: "Authenticating with JWT bearer tokens"
+description: "How to obtain a JWT token with your DNI and password, attach it to every request, validate it, and handle authentication errors across all endpoints."
+---
+
+API Registro Pendientes uses stateless JWT (JSON Web Token) bearer authentication. Every protected endpoint requires a valid token in the `Authorization` request header. Tokens are issued by `POST /auth` and do not expire — access is revoked only when an administrator deactivates the user account.
+
+## Obtaining a token
+
+Call `POST /auth` with your DNI and password. On success, the response contains a signed JWT and a user object with your account details and role.
+
+### Endpoint
+
+```
+POST /auth
+```
+
+### Request
+
+**Content-Type:** `application/json`
+
+<ParamField body="dni" type="string" required>
+  The user's national identity number (DNI). This is the unique login identifier for every user account. Example: `"12345678"`.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's plaintext password. Passwords are verified against a BCrypt hash stored in the database — never stored in plain text.
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string" required>
+  A signed HMAC-SHA256 JWT. Pass this value in the `Authorization: Bearer` header for all subsequent requests. The token encodes the user's ID (as the subject) and role claim.
+</ResponseField>
+
+<ResponseField name="nombre" type="string">
+  Full name of the authenticated user.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address of the authenticated user.
+</ResponseField>
+
+<ResponseField name="rol" type="string">
+  The role identifier string assigned to this user, e.g. `"ADMIN"`, `"TECNICO"`.
+</ResponseField>
+
+### Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST http://localhost:8080/auth \
+      -H "Content-Type: application/json" \
+      -d '{"dni": "12345678", "password": "yourpassword"}'
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    const response = await fetch('http://localhost:8080/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dni: '12345678', password: 'yourpassword' }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Authentication failed: ${response.status}`);
+    }
+
+    const { token, usuario } = await response.json();
+    // Store token securely for use in subsequent requests
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import requests
+
+    resp = requests.post(
+        'http://localhost:8080/auth',
+        json={'dni': '12345678', 'password': 'yourpassword'},
+    )
+    resp.raise_for_status()
+
+    data = resp.json()
+    token = data['token']
+    usuario = data['usuario']
+    ```
+  </Tab>
+</Tabs>
+
+**Successful response (200 OK):**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwicm9sIjoiQURNSU4ifQ.abc123...",
+  "nombre": "Juan Perez",
+  "email": "juan@example.com",
+  "rol": "ADMIN"
+}
+```
+
+---
+
+## Using the token in requests
+
+Include the token in the `Authorization` header of every request to a protected endpoint. Use the `Bearer` scheme.
+
+```
+Authorization: Bearer <your-token>
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X GET http://localhost:8080/api/pendientes \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    const response = await fetch('http://localhost:8080/api/pendientes', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import requests
+
+    resp = requests.get(
+        'http://localhost:8080/api/pendientes',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Public routes (no token required)
+
+The following paths are publicly accessible and do not require an `Authorization` header:
+
+| Path pattern | Purpose |
+|---|---|
+| `/auth/**` | Login and token validation |
+| `/app/**` | Mobile app version metadata |
+| `/swagger-ui/**` | Interactive API documentation |
+| `/v3/api-docs/**` | OpenAPI schema endpoint |
+
+All other routes require a valid JWT bearer token.
+
+---
+
+## Validating a token
+
+Use `GET /auth/validar-token` to verify that a token is still valid and retrieve the associated user information. This endpoint is useful for session restoration on app startup.
+
+### Endpoint
+
+```
+GET /auth/validar-token
+```
+
+**Required header:**
+
+```
+Authorization: Bearer <your-token>
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X GET http://localhost:8080/auth/validar-token \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    const response = await fetch('http://localhost:8080/auth/validar-token', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.ok) {
+      const message = await response.text();
+      console.log(message); // "Token válido y usuario activo"
+    } else {
+      console.warn('Token is invalid or user has been deactivated');
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    resp = requests.get(
+        'http://localhost:8080/auth/validar-token',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    if resp.status_code == 200:
+        print('Valid:', resp.text)  # "Token válido y usuario activo"
+    else:
+        print('Invalid token or inactive user')
+    ```
+  </Tab>
+</Tabs>
+
+- **200 OK** — Token is valid. Response body contains the user object.
+- **401 Unauthorized** — Token is missing, malformed, or the associated user has been deactivated.
+
+---
+
+## Common authentication errors
+
+All authentication failures return HTTP `401 Unauthorized`. The response body provides a message indicating the cause.
+
+<AccordionGroup>
+  <Accordion title="User not found (DNI does not exist)">
+    **Cause:** No user account exists with the provided DNI.
+
+    **Response:**
+    ```json
+    { "message": "Usuario no encontrado" }
+    ```
+
+    **Resolution:** Verify the DNI is correct and that the account has been created by an administrator.
+  </Accordion>
+
+  <Accordion title="Wrong password">
+    **Cause:** The DNI exists but the BCrypt password verification failed.
+
+    **Response:**
+    ```json
+    { "message": "Credenciales inválidas" }
+    ```
+
+    **Resolution:** Check that the password is correct. Contact your administrator to reset it if needed.
+  </Accordion>
+
+  <Accordion title="User account is inactive">
+    **Cause:** The account exists and the password is correct, but the `vigente` flag is `false`. The server rejects login for inactive users.
+
+    **Response:**
+    ```json
+    { "message": "Usuario inactivo" }
+    ```
+
+    **Resolution:** An administrator must reactivate the account via `PUT /api/usuarios/{id}` with `"vigente": true`.
+  </Accordion>
+
+  <Accordion title="Missing or malformed Authorization header">
+    **Cause:** A protected endpoint was called without a token, with an incorrectly formatted header, or with a tampered token that fails HMAC-SHA256 signature verification.
+
+    **HTTP status:** `401 Unauthorized` or `403 Forbidden`
+
+    **Resolution:** Ensure the header is formatted as `Authorization: Bearer <token>` with no extra whitespace, and that the token has not been modified after it was issued.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Token lifetime and revocation
+
+<Warning>
+  Tokens issued by this API do **not expire**. A token obtained today will remain valid indefinitely unless the user's account is deactivated. Store tokens securely — treat them with the same care as a password.
+</Warning>
+
+Key points about token lifetime:
+
+- **No expiration:** The JWT payload contains no `exp` claim. The token is valid for as long as the user account remains active.
+- **Revocation by deactivation:** The only way to invalidate a token is for an administrator to set the user's `vigente` flag to `false`. The next request using that token will fail validation at `GET /auth/validar-token` or on any protected endpoint.
+- **No refresh flow:** Because tokens do not expire, there is no refresh token mechanism. Clients simply reuse the same token until it stops working.
+- **Token contents:** Each token encodes the user's numeric ID (as the JWT subject) and their role identifier as a claim. The signing key is configured on the server and uses HMAC-SHA256.
+
+<Tip>
+  For mobile and web clients, validate your stored token with `GET /auth/validar-token` when the application starts. If the response is `401`, prompt the user to log in again — their account may have been deactivated.
+</Tip>

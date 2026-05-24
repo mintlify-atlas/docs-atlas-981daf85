@@ -1,0 +1,225 @@
+---
+title: 'Uploading Images to Work Order Notes'
+description: 'Upload one or more images to a work order note using multipart/form-data, retrieve the served URLs, and follow best practices for mobile field photos.'
+keywords: ['file upload', 'images', 'multipart', 'notas', 'work order', 'spring boot']
+---
+
+Field technicians can attach photos to work order notes to document site conditions, completed tasks, or issues encountered on-site. Images are uploaded via a multipart HTTP request, stored on the server filesystem, and immediately accessible via a static URL. This guide covers the upload endpoint, request format, response structure, and practical client examples.
+
+## Upload endpoint
+
+```
+POST /api/notas/{notaId}/imagenes/upload
+```
+
+| Parameter | Location | Type | Description |
+|---|---|---|---|
+| `notaId` | Path | number | ID of the work order note to attach images to |
+| `files` | Form field | file (multi) | One or more image files |
+
+<Info>
+  The form field name must be exactly `files`. Sending files under a different field name will result in a 400 error.
+</Info>
+
+## Request format
+
+The request must use `Content-Type: multipart/form-data`. You can include multiple files in a single request by repeating the `imagenes` field.
+
+### File size limits
+
+| Limit | Value |
+|---|---|
+| Maximum size per file | 50 MB |
+| Maximum total request size | 50 MB |
+
+<Warning>
+  Both limits are set to 50 MB, so in practice a single request is capped at 50 MB total across all files. To upload many large images, split them across multiple requests.
+</Warning>
+
+## Examples
+
+<CodeGroup>
+
+```bash curl
+curl -X POST http://localhost:8080/api/notas/42/imagenes/upload \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..." \
+  -F "files=@/path/to/photo1.jpg" \
+  -F "files=@/path/to/photo2.jpg"
+```
+
+```javascript JavaScript (fetch)
+async function uploadImages(notaId, files, token) {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  const response = await fetch(
+    `http://localhost:8080/api/notas/${notaId}/imagenes/upload`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+        // Do NOT set Content-Type manually — fetch sets it automatically
+        // with the correct multipart boundary when using FormData
+      },
+      body: formData
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Upload failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+```
+
+```javascript JavaScript (input element)
+// Wiring to an <input type="file" multiple accept="image/*" id="fileInput">
+document.getElementById('fileInput').addEventListener('change', async (event) => {
+  const files = Array.from(event.target.files);
+  const notaId = 42;
+  const token = localStorage.getItem('access_token');
+
+  try {
+    const result = await uploadImages(notaId, files, token);
+    console.log('Uploaded images:', result);
+  } catch (err) {
+    console.error(err);
+  }
+});
+```
+
+</CodeGroup>
+
+## Response
+
+A successful upload returns `200 OK` with a JSON array of saved image objects.
+
+```json
+[
+  {
+    "id": 101,
+    "url": "/uploads/notas/photo1_a3f2c1.jpg"
+  },
+  {
+    "id": 102,
+    "url": "/uploads/notas/photo2_b7e4d9.jpg"
+  }
+]
+```
+
+### Response fields
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | number | Unique identifier for the stored image record |
+| `url` | string | Server-relative path to the uploaded file |
+
+## Accessing uploaded images
+
+Uploaded files are served from the `/uploads/**` static resource path. Construct the full URL by prepending the server base URL to the `url` field from the response:
+
+```
+GET http://your-host:8080/uploads/notas/{filename}
+```
+
+**Example:**
+
+```
+GET http://your-host:8080/uploads/notas/photo1_a3f2c1.jpg
+```
+
+No authentication is required to access image URLs — they are served as public static resources.
+
+<Note>
+  Images are stored in the `uploads/notas/` directory on the server filesystem, relative to the process working directory. Ensure this path is writable and backed up as part of your deployment strategy.
+</Note>
+
+## Updating images for a note
+
+To replace or update the set of images associated with a note, use the PUT endpoint:
+
+```
+PUT /api/notas/{notaId}/imagenes
+```
+
+Refer to the API reference for the full request schema for this endpoint.
+
+## Best practices
+
+<Steps>
+  <Step title="Compress images before uploading">
+    Field photos from mobile cameras can easily exceed 8 MB each. Compress images on the client before sending to stay well within the 50 MB limit and reduce upload time on slow cellular connections.
+
+    ```javascript
+    // Using browser-image-compression (npm install browser-image-compression)
+    import imageCompression from 'browser-image-compression';
+
+    const compressed = await imageCompression(file, {
+      maxSizeMB: 2,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true
+    });
+
+    formData.append('imagenes', compressed, file.name);
+    ```
+  </Step>
+
+  <Step title="Use JPEG for photographs">
+    JPEG provides the best file-size-to-quality ratio for real-world photos. PNG is more appropriate for screenshots or diagrams with sharp edges and text.
+
+    <Tip>
+      Convert PNG photos to JPEG on the client before uploading. A 5 MB PNG photo is often under 500 KB as a JPEG at 85% quality with no perceptible difference.
+    </Tip>
+  </Step>
+
+  <Step title="Validate file types on the client">
+    Check the MIME type and file extension before submitting to give users immediate feedback rather than waiting for a server error.
+
+    ```javascript
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+    function validateFiles(files) {
+      for (const file of files) {
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          throw new Error(`Unsupported file type: ${file.type}`);
+        }
+        if (file.size > 50 * 1024 * 1024) {
+          throw new Error(`File too large: ${file.name}`);
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Handle upload errors gracefully">
+    Network interruptions are common in field conditions. Implement retry logic with user feedback for failed uploads.
+
+    ```javascript
+    async function uploadWithRetry(notaId, files, token, maxRetries = 3) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await uploadImages(notaId, files, token);
+        } catch (err) {
+          if (attempt === maxRetries) throw err;
+          const delay = attempt * 2000; // 2s, 4s, 6s
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Common errors
+
+| Status | Cause | Resolution |
+|---|---|---|
+| `400 Bad Request` | Wrong form field name (not `imagenes`) | Ensure the multipart field is named exactly `imagenes` |
+| `401 Unauthorized` | Missing or expired JWT | Include a valid `Authorization: Bearer <token>` header |
+| `404 Not Found` | `notaId` does not exist | Verify the note ID before uploading |
+| `413 Payload Too Large` | File or request exceeds 50 MB | Compress images or split into multiple requests |
+| `500 Internal Server Error` | `uploads/` directory not writable | Ensure the server process has write permission to the `uploads/notas/` path |

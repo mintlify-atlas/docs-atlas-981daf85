@@ -1,0 +1,465 @@
+---
+title: 'Work Order Type Sub-Resources'
+description: 'Manage type-specific details for each work order kind: relocation (traslado), internet installation, fault repair, camera installation, and device pickup.'
+---
+
+Each pendiente has a *type*, and each type has its own sub-resource with specialized fields. After creating a pendiente with `POST /api/pendientes/`, you must create the corresponding type details record before the order can be dispatched to a technician.
+
+All endpoints on this page are nested under the base path `/api/pendientes` and require a valid `Authorization: Bearer <token>` header.
+
+<Note>
+  PPPoE and VLAN fields are updated through dedicated sub-endpoints rather than the main PUT endpoint. This allows technicians to update connection credentials in the field independently of other record fields.
+</Note>
+
+---
+
+<Tabs>
+  <Tab title="Traslado">
+
+## Traslado (relocation)
+
+A traslado order covers moving a client's ISP service to a new address — including migrating equipment and updating the network configuration at the destination.
+
+### GET /api/pendientes/{id}/traslado
+
+Retrieve the traslado details for a pendiente.
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente.
+</ParamField>
+
+**Response — PendienteTrasladoResponse:**
+
+<ResponseField name="id" type="number">Sub-resource ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent pendiente ID.</ResponseField>
+<ResponseField name="lugarDestino" type="string">Destination zone (LugarPendiente enum).</ResponseField>
+<ResponseField name="direccionDestino" type="string">Full destination address.</ResponseField>
+<ResponseField name="tipoServicio" type="string">Type of service being relocated (TipoServicio enum).</ResponseField>
+<ResponseField name="ppoe" type="string">PPPoE username, populated after technician visit.</ResponseField>
+<ResponseField name="ppoePassword" type="string">PPPoE password.</ResponseField>
+<ResponseField name="vlan" type="string">VLAN tag assigned at destination.</ResponseField>
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/42/traslado \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### POST /api/pendientes/traslado
+
+Create the traslado details for an existing pendiente.
+
+<ParamField body="pendienteId" type="number" required>
+  ID of the parent pendiente. The pendiente type must be `TRASLADO`.
+</ParamField>
+
+<ParamField body="lugarDestino" type="string" required>
+  Destination zone. One of: `ZONA_RURAL`, `JULIACA`, `PUNO`, `CHUCUITO`, `PLATERIA`, `ACORA`, `ILAVE`, `JULI`, `POMATA`, `CHACACHACA`, `YONGUYO`, `ZEPITA`, `DESAGUADERO`.
+</ParamField>
+
+<ParamField body="direccionDestino" type="string" required>
+  Street address at the destination.
+</ParamField>
+
+<ParamField body="tipoServicio" type="string" required>
+  Service type to migrate. One of: `INTERNET_FIBRA`, `INTERNET_INALAMBRICO`, `CAMARAS`, `DECOS`, `OTRO`.
+</ParamField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/traslado \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 42,
+    "lugarDestino": "JULIACA",
+    "direccionDestino": "Av. Manco Cápac 120, Juliaca",
+    "tipoServicio": "INTERNET_FIBRA"
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/traslado
+
+Update the main traslado fields (destination address, service type, etc.).
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/42/traslado \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "lugarDestino": "PUNO",
+    "direccionDestino": "Jr. Lima 55, Puno",
+    "tipoServicio": "INTERNET_FIBRA"
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/traslado/ppoe
+
+Update the PPPoE credentials after the technician has configured the connection at the destination. Both parameters are passed as query parameters.
+
+<ParamField query="ppoeUser" type="string" required>PPPoE username.</ParamField>
+<ParamField query="ppoePassword" type="string" required>PPPoE password.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/42/traslado/ppoe?ppoeUser=cli_12345678&ppoePassword=p%40ssword99' \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### PUT /api/pendientes/{id}/traslado/vlan
+
+Update the VLAN tag assigned at the destination. The VLAN value is passed as a query parameter.
+
+<Note>
+  The source path for this endpoint contains a special character (`¿`) which may be a typo in the codebase. Verify the actual deployed path with your team if this endpoint does not respond.
+</Note>
+
+<ParamField query="vlan" type="string" required>VLAN identifier string.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/42/traslado/vlan?vlan=1042' \
+  --header 'Authorization: Bearer <token>'
+```
+
+  </Tab>
+
+  <Tab title="Instalación Internet">
+
+## Instalación Internet
+
+Covers new internet service installations, including both fiber and wireless connections.
+
+### GET /api/pendientes/{id}/instalacion-internet
+
+Retrieve installation details for a pendiente.
+
+<ParamField path="id" type="number" required>ID of the pendiente.</ParamField>
+
+**Response fields:**
+
+<ResponseField name="id" type="number">Sub-resource ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent pendiente ID.</ResponseField>
+<ResponseField name="velocidadSolicitada" type="string">Requested bandwidth, e.g. `"100 Mbps"`.</ResponseField>
+<ResponseField name="costoFijo" type="number">Monthly fixed cost agreed with the client.</ResponseField>
+<ResponseField name="tipoInstalacion" type="string">Installation method (TipoInstalacion enum).</ResponseField>
+<ResponseField name="ppoe" type="string">PPPoE username after installation.</ResponseField>
+<ResponseField name="ppoePassword" type="string">PPPoE password.</ResponseField>
+<ResponseField name="vlan" type="string">Assigned VLAN.</ResponseField>
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/55/instalacion-internet \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### POST /api/pendientes/instalacion-internet
+
+Create the installation details for an existing pendiente of type `INSTALACION_INTERNET`.
+
+<ParamField body="pendienteId" type="number" required>Parent pendiente ID.</ParamField>
+<ParamField body="velocidadSolicitada" type="string" required>Bandwidth requested by the client (free text, e.g. `"50 Mbps"`).</ParamField>
+<ParamField body="costoFijo" type="number" required>Agreed monthly cost in local currency.</ParamField>
+<ParamField body="tipoInstalacion" type="string" required>
+  One of: `MIGRACION_FIBRA`, `MIGRACION_INALAMBRICO`, `FIBRA`, `INALAMBRICO`, `OTRO`.
+</ParamField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/instalacion-internet \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 55,
+    "velocidadSolicitada": "100 Mbps",
+    "costoFijo": 50.00,
+    "tipoInstalacion": "FIBRA"
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/instalacion-internet
+
+Update the main installation fields.
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/55/instalacion-internet \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "velocidadSolicitada": "200 Mbps",
+    "costoFijo": 75.00,
+    "tipoInstalacion": "FIBRA"
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/instalacion-internet/ppoe
+
+Update PPPoE credentials once the technician completes the installation. Both parameters are query parameters.
+
+<ParamField query="ppoeUser" type="string" required>PPPoE username.</ParamField>
+<ParamField query="ppoePassword" type="string" required>PPPoE password.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/55/instalacion-internet/ppoe?ppoeUser=cli_55_fiber&ppoePassword=securePass%21' \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### PUT /api/pendientes/{id}/instalacion-internet/vlan
+
+Update the VLAN assignment. The VLAN value is a query parameter.
+
+<ParamField query="vlan" type="string" required>VLAN tag string.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/55/instalacion-internet/vlan?vlan=2055' \
+  --header 'Authorization: Bearer <token>'
+```
+
+  </Tab>
+
+  <Tab title="Avería">
+
+## Avería (fault)
+
+An avería order is created when a client reports a service fault. The technician diagnoses and resolves the issue on-site.
+
+### GET /api/pendientes/{id}/averia
+
+Retrieve fault details for a pendiente.
+
+<ParamField path="id" type="number" required>ID of the pendiente.</ParamField>
+
+**Response fields:**
+
+<ResponseField name="id" type="number">Sub-resource ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent pendiente ID.</ResponseField>
+<ResponseField name="descripcionFalla" type="string">Description of the reported fault.</ResponseField>
+<ResponseField name="ppoe" type="string">PPPoE username (may be updated in the field).</ResponseField>
+<ResponseField name="ppoePassword" type="string">PPPoE password.</ResponseField>
+<ResponseField name="vlan" type="string">VLAN tag.</ResponseField>
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/67/averia \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### POST /api/pendientes/averia
+
+Create fault details for a pendiente of type `AVERIA`.
+
+<ParamField body="pendienteId" type="number" required>Parent pendiente ID.</ParamField>
+<ParamField body="descripcionFalla" type="string" required>
+  Description of the fault as reported by the client or dispatch team.
+</ParamField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/averia \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 67,
+    "descripcionFalla": "Cliente sin servicio de internet desde las 08:00. Posible corte en la NAP."
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/averia
+
+Update the fault description or other fields.
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/67/averia \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "descripcionFalla": "Corte confirmado en splitter externo. Requiere reemplazo."
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/averia/ppoe
+
+Update PPPoE credentials (e.g. after a router reset). Both parameters are query parameters.
+
+<ParamField query="ppoeUser" type="string" required>PPPoE username.</ParamField>
+<ParamField query="ppoePassword" type="string" required>PPPoE password.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/67/averia/ppoe?ppoeUser=cli_67&ppoePassword=newpass123' \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### PUT /api/pendientes/{id}/averia/vlan
+
+Update VLAN after reconfiguration. The VLAN value is a query parameter.
+
+<Note>
+  The source path for this endpoint contains a special character (`¿`) which may be a typo in the codebase. Verify the actual deployed path with your team if this endpoint does not respond.
+</Note>
+
+<ParamField query="vlan" type="string" required>VLAN tag string.</ParamField>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/67/averia/vlan?vlan=1067' \
+  --header 'Authorization: Bearer <token>'
+```
+
+  </Tab>
+
+  <Tab title="Instalación Cámaras">
+
+## Instalación Cámaras
+
+Covers new security camera system installations for clients.
+
+### GET /api/pendientes/{id}/instalacion-camaras
+
+Retrieve camera installation details.
+
+<ParamField path="id" type="number" required>ID of the pendiente.</ParamField>
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/80/instalacion-camaras \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### POST /api/pendientes/instalacion-camaras
+
+Create camera installation details for a pendiente of type `INSTALACION_CAMARAS`.
+
+<ParamField body="pendienteId" type="number" required>
+  Parent pendiente ID. Additional fields can be added later via the PUT endpoint.
+</ParamField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/instalacion-camaras \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 80
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/instalacion-camaras
+
+Update the camera installation record with details gathered during the site visit.
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/80/instalacion-camaras \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 80
+  }'
+```
+
+  </Tab>
+
+  <Tab title="Recojo Dispositivo">
+
+## Recojo Dispositivo (device pickup)
+
+A recojo order is created when equipment needs to be retrieved from a client location — typically after a service cancellation or contract termination.
+
+### GET /api/pendientes/{id}/recojo-dispositivo
+
+Retrieve device pickup details.
+
+<ParamField path="id" type="number" required>ID of the pendiente.</ParamField>
+
+**Response fields:**
+
+<ResponseField name="id" type="number">Sub-resource ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent pendiente ID.</ResponseField>
+<ResponseField name="dispositivo" type="string">Device type to retrieve (TipoDispositivoRecojo enum).</ResponseField>
+<ResponseField name="motivo" type="string">Reason for device retrieval.</ResponseField>
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/91/recojo-dispositivo \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+### POST /api/pendientes/recojo-dispositivo
+
+Create device pickup details for a pendiente of type `RECOJO_DISPOSITIVOS`.
+
+<ParamField body="pendienteId" type="number" required>Parent pendiente ID.</ParamField>
+<ParamField body="dispositivo" type="string" required>
+  Device type to pick up. One of: `ROUTER`, `DECO`, `ANTENA`, `OTRO`.
+</ParamField>
+<ParamField body="motivo" type="string" required>
+  Reason for the retrieval, e.g. service cancellation or equipment upgrade.
+</ParamField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/recojo-dispositivo \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 91,
+    "dispositivo": "ROUTER",
+    "motivo": "Contrato cancelado por el cliente. Recuperar equipo Huawei HG8145V5."
+  }'
+```
+
+---
+
+### PUT /api/pendientes/{id}/recojo-dispositivo
+
+Update device pickup details.
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/91/recojo-dispositivo \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "dispositivo": "ANTENA",
+    "motivo": "También recuperar antena del techo."
+  }'
+```
+
+  </Tab>
+</Tabs>

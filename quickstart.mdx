@@ -1,81 +1,202 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart: Your First API Registro Pendientes Call"
+description: "Authenticate, create a field work order, and retrieve its status in under five minutes using the API Registro Pendientes REST API."
+keywords: ["quickstart", "getting started", "authentication", "work order", "pendiente", "curl"]
 ---
 
-## Get started in three steps
+API Registro Pendientes follows a straightforward request cycle: authenticate once to receive a JWT token, then include that token in every subsequent request. This guide walks you through authentication, creating a work order, and checking its status — all from the command line.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have the following:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- **Java 21** or later installed on your machine (required only if you are running the server locally)
+- A **running API instance** — either a local server on `http://localhost:8080` or a remote deployment URL provided by your team
+- **User credentials** (DNI and password) issued by your system administrator
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  If you need credentials or access to a running instance, contact your ISP administrator. User accounts are managed via the `/api/usuarios` endpoint and require the `REGISTRAR_PENDIENTE` permission to create work orders.
 </Note>
+
+## Steps
+
+<Steps>
+  <Step title="Authenticate and obtain a token">
+    Send your DNI and password to `POST /auth`. The response contains a JWT token you will use for all subsequent requests.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl -X POST http://localhost:8080/auth \
+      -H "Content-Type: application/json" \
+      -d '{"dni": "12345678", "password": "yourpassword"}'
+    ```
+
+    ```javascript JavaScript (fetch)
+    const response = await fetch('http://localhost:8080/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dni: '12345678', password: 'yourpassword' }),
+    });
+
+    const { token, usuario } = await response.json();
+    console.log('Token:', token);
+    ```
+
+    ```python Python (requests)
+    import requests
+
+    resp = requests.post(
+        'http://localhost:8080/auth',
+        json={'dni': '12345678', 'password': 'yourpassword'},
+    )
+    data = resp.json()
+    token = data['token']
+    print('Token:', token)
+    ```
+
+    </CodeGroup>
+
+    A successful response looks like this:
+
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiJ9...",
+      "usuario": {
+        "id": 1,
+        "nombre": "Juan Perez",
+        "dni": "12345678",
+        "email": "juan@example.com",
+        "vigente": true,
+        "rol": { "id": "ADMIN", "nombre": "Administrador" }
+      }
+    }
+    ```
+
+    Copy the `token` value — you will pass it in the `Authorization` header for every subsequent request.
+  </Step>
+
+  <Step title="Create a work order">
+    Send a `POST /api/pendientes` request with the work order details. Replace the `Authorization` header value with the token you received in step 1.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl -X POST http://localhost:8080/api/pendientes \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..." \
+      -H "Content-Type: application/json" \
+      -d '{
+        "clienteId": 1,
+        "tipo": "INSTALACION_INTERNET",
+        "prioridad": "MEDIA",
+        "lugar": "JULIACA",
+        "empresa": "SIMAX",
+        "direccion": "Jr. Moquegua 123",
+        "fechaPendiente": "2026-05-25",
+        "registradoPorId": 2
+      }'
+    ```
+
+    ```javascript JavaScript (fetch)
+    const response = await fetch('http://localhost:8080/api/pendientes', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clienteId: 1,
+        tipo: 'INSTALACION_INTERNET',
+        prioridad: 'MEDIA',
+        lugar: 'JULIACA',
+        empresa: 'SIMAX',
+        direccion: 'Jr. Moquegua 123',
+        fechaPendiente: '2026-05-25',
+        registradoPorId: 2,
+      }),
+    });
+
+    const pendiente = await response.json();
+    console.log('Created work order ID:', pendiente.id);
+    ```
+
+    ```python Python (requests)
+    import requests
+
+    pendiente = requests.post(
+        'http://localhost:8080/api/pendientes',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'clienteId': 1,
+            'tipo': 'INSTALACION_INTERNET',
+            'prioridad': 'MEDIA',
+            'lugar': 'JULIACA',
+            'empresa': 'SIMAX',
+            'direccion': 'Jr. Moquegua 123',
+            'fechaPendiente': '2026-05-25',
+            'registradoPorId': 2,
+        },
+    )
+    print('Created work order ID:', pendiente.json()['id'])
+    ```
+
+    </CodeGroup>
+
+    The response returns the newly created work order with its assigned `id` and an initial state of `REGISTRADO`.
+
+    <Note>
+      The `tipo` field accepts: `INSTALACION_INTERNET`, `AVERIA`, `INSTALACION_CAMARAS`, `RECOJO_DISPOSITIVOS`, and `TRASLADO`. The `prioridad` field accepts `BAJA`, `MEDIA`, `URGENTE`, and `MUY_URGENTE`. See [Core Concepts](/concepts/pendientes) for details on all field values.
+    </Note>
+  </Step>
+
+  <Step title="Check the work order status">
+    Use the `id` returned in the previous step to fetch the current state of the work order.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl -X GET http://localhost:8080/api/pendientes/1 \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+    ```
+
+    ```javascript JavaScript (fetch)
+    const response = await fetch(`http://localhost:8080/api/pendientes/${pendiente.id}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    const detail = await response.json();
+    console.log('Status:', detail.estado);
+    ```
+
+    ```python Python (requests)
+    detail = requests.get(
+        f'http://localhost:8080/api/pendientes/{pendiente_id}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    print('Status:', detail.json()['estado'])
+    ```
+
+    </CodeGroup>
+
+    The response includes the full work order object, including its `estado` (state), assigned technician, timestamps, and any attached notes.
+  </Step>
+</Steps>
+
+## What's next
+
+You have authenticated, created a work order, and retrieved its details. From here, you can:
+
+<CardGroup cols={2}>
+  <Card title="Authentication reference" icon="lock" href="/authentication">
+    Understand token lifetime, validation, and how to handle auth errors.
+  </Card>
+  <Card title="Work order states" icon="arrow-right-arrow-left" href="/concepts/estados">
+    Learn the full state machine: `REGISTRADO` → `ASIGNADO` → `EN_PROGRESO` → `FINALIZADO`.
+  </Card>
+  <Card title="Permissions model" icon="shield" href="/concepts/permisos">
+    See which permissions are required for each operation and how roles are configured.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/pendientes">
+    Full endpoint documentation with all request parameters and response schemas.
+  </Card>
+</CardGroup>

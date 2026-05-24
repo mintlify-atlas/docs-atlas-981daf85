@@ -1,0 +1,216 @@
+---
+title: 'Time Tracking — Work Order Session Management'
+description: 'Open, update, and close time sessions on work orders to record how long each technician spent on a job. Supports concurrent sessions across multiple technicians.'
+keywords: ['tiempos', 'time tracking', 'session', 'horaInicio', 'horaFin', 'technician']
+---
+
+Time tracking allows you to record the exact duration each technician spends working on a pendiente. A *session* (tiempo) has an open `horaInicio` and is closed by setting `horaFin`. Multiple sessions can be open simultaneously if more than one technician is working on the same order.
+
+**Base path:** All session endpoints are nested under `/api/pendientes`.
+
+## Session lifecycle
+
+```
+POST /tiempos          →  session created (horaInicio set, horaFin = null)
+PUT  /tiempos/{id}     →  update description or adjust times
+PUT  /tiempos/{id}/cerrar-ultimo  →  close the latest open session (sets horaFin)
+DELETE /tiempos/{id}   →  remove session if created in error
+```
+
+<Note>
+  `PUT /tiempos/{id}/cerrar-ultimo` closes the most recent open session for the given pendiente, not necessarily the session identified by `{id}`. Verify which session will be closed before calling this endpoint if multiple sessions are open.
+</Note>
+
+---
+
+## GET /api/pendientes/{id}/tiempos
+
+List all time sessions recorded for a specific work order, ordered by `horaInicio` ascending.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente whose sessions you want to retrieve.
+</ParamField>
+
+### Response — 200 OK
+
+Returns an array of `PendienteTiempoResponse` objects.
+
+<ResponseField name="id" type="number">Session ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent work order ID.</ResponseField>
+<ResponseField name="empleadoId" type="number">ID of the technician who owns this session.</ResponseField>
+<ResponseField name="horaInicio" type="string">ISO 8601 datetime when the session started.</ResponseField>
+<ResponseField name="horaFin" type="string">
+  ISO 8601 datetime when the session ended. `null` if the session is still open.
+</ResponseField>
+<ResponseField name="descripcion" type="string">
+  Free-text description of the work performed during this session.
+</ResponseField>
+
+### Example
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/42/tiempos \
+  --header 'Authorization: Bearer <token>'
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": 1,
+    "pendienteId": 42,
+    "empleadoId": 9,
+    "horaInicio": "2026-06-15T08:30:00",
+    "horaFin": "2026-06-15T10:45:00",
+    "descripcion": "Instalación del splitter y tendido de fibra."
+  },
+  {
+    "id": 2,
+    "pendienteId": 42,
+    "empleadoId": 9,
+    "horaInicio": "2026-06-15T11:00:00",
+    "horaFin": null,
+    "descripcion": "Configuración del ONT y pruebas de velocidad."
+  }
+]
+```
+
+---
+
+## POST /api/pendientes/tiempos
+
+Start a new time session for a work order. The session's `horaInicio` is set to the current server time.
+
+### Request body
+
+<ParamField body="pendienteId" type="number" required>
+  ID of the work order this session belongs to.
+</ParamField>
+
+<ParamField body="empleadoId" type="number" required>
+  ID of the technician starting the session.
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Optional description of the planned work. Can be updated later with `PUT /tiempos/{id}`.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the newly created `PendienteTiempoResponse` with `horaFin: null`.
+
+<Tip>
+  Call this endpoint when a technician arrives on-site or begins working on the order remotely. Close the session with `PUT /tiempos/{id}/cerrar-ultimo` when they finish.
+</Tip>
+
+### Example
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/tiempos \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 42,
+    "empleadoId": 9,
+    "descripcion": "Inicio de instalación en domicilio del cliente."
+  }'
+```
+
+---
+
+## PUT /api/pendientes/tiempos/{id}
+
+Update an existing session — for example, to correct the description or adjust timestamps.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the session to update.
+</ParamField>
+
+### Request body
+
+Send only the fields you want to update. All fields are optional.
+
+<ParamField body="descripcion" type="string">
+  Updated description of work performed.
+</ParamField>
+
+<ParamField body="horaInicio" type="string">
+  Corrected start time in ISO 8601 format.
+</ParamField>
+
+<ParamField body="horaFin" type="string">
+  Corrected end time in ISO 8601 format. Setting this closes the session.
+</ParamField>
+
+### Example
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/tiempos/2 \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "descripcion": "Configuración del ONT, pruebas de velocidad y entrega a cliente."
+  }'
+```
+
+---
+
+## PUT /api/pendientes/tiempos/{id}/cerrar-ultimo
+
+Close the most recent open session associated with the pendiente. Sets `horaFin` to the current server time.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID used to identify the pendiente context. The server closes the latest open session for this pendiente.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the updated session with `horaFin` populated.
+
+<Warning>
+  If no open session exists for the pendiente, the API returns a `404 Not Found`. Ensure a session was opened with `POST /tiempos` before calling this endpoint.
+</Warning>
+
+### Example
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/tiempos/2/cerrar-ultimo \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+## DELETE /api/pendientes/tiempos/{id}
+
+Delete a time session. Use this to remove sessions created by mistake.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the session to delete.
+</ParamField>
+
+### Response — 200 OK
+
+Returns no body on success.
+
+<Warning>
+  Deleting a session permanently removes it from the work order's time log. This action cannot be undone.
+</Warning>
+
+```bash cURL
+curl --request DELETE \
+  --url https://api.example.com/api/pendientes/tiempos/2 \
+  --header 'Authorization: Bearer <token>'
+```

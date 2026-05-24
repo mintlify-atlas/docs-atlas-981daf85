@@ -1,0 +1,210 @@
+---
+title: 'Work Order History — Audit Trail & State Log'
+description: 'Query the complete audit history for any work order, with entries created automatically on state changes and optionally created manually for custom events.'
+keywords: ['historial', 'history', 'audit trail', 'state log', 'cambio estado', 'audit']
+---
+
+Every state change on a work order automatically generates a history entry (`historial`). This creates a tamper-evident audit trail showing who changed what and when — essential for SLA tracking, dispute resolution, and field operations review.
+
+Manual entries can also be created to record events that fall outside the standard state machine, such as phone calls with the client, supervisor instructions, or equipment notes.
+
+**Base path:** `/api/historiales`
+
+<Note>
+  All historial endpoints require a valid `Authorization: Bearer <token>` header.
+</Note>
+
+---
+
+## POST /api/historiales
+
+Create a manual history entry on a work order. Use this for events that are not driven by a state change — for example, logging a phone call, recording a supervisor decision, or noting an exception.
+
+<Tip>
+  You do not need to call this endpoint after using `PUT /api/pendientes/{id}/estado`. State change endpoints create history entries automatically. Use `POST /api/historiales` only for custom events.
+</Tip>
+
+### Request body
+
+<ParamField body="pendienteId" type="number" required>
+  ID of the work order this entry belongs to.
+</ParamField>
+
+<ParamField body="empleadoId" type="number" required>
+  ID of the employee recording this event.
+</ParamField>
+
+<ParamField body="estado" type="string" required>
+  The `EstadoPendiente` value to associate with this log entry. Use the current state of the pendiente when recording a manual event. One of: `REGISTRADO`, `ASIGNADO`, `EN_PROGRESO`, `PAUSADO`, `REVISION`, `POR_VALIDAR`, `OBSERVADO`, `FINALIZADO`, `POSTERGADO`, `CANCELADO`.
+</ParamField>
+
+<ParamField body="detalles" type="string" required>
+  Free-text description of the event being logged.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the newly created `HistorialResponse`:
+
+<ResponseField name="id" type="number">History entry ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Parent work order ID.</ResponseField>
+<ResponseField name="empleado" type="object">
+  Full employee object for the person who recorded this entry.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Employee ID.</ResponseField>
+    <ResponseField name="nombre" type="string">Employee full name.</ResponseField>
+    <ResponseField name="dni" type="string">Employee DNI.</ResponseField>
+    <ResponseField name="email" type="string">Employee email.</ResponseField>
+    <ResponseField name="rol" type="object">
+      <Expandable title="rol properties">
+        <ResponseField name="id" type="string">Role identifier.</ResponseField>
+        <ResponseField name="nombre" type="string">Role name.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="estado" type="string">The `EstadoPendiente` value captured in this entry.</ResponseField>
+<ResponseField name="detalles" type="string">Event description text.</ResponseField>
+<ResponseField name="fechaCreacion" type="string">ISO 8601 timestamp of when this entry was created.</ResponseField>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/historiales \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 42,
+    "empleadoId": 3,
+    "estado": "EN_PROGRESO",
+    "detalles": "Cliente llamó para confirmar disponibilidad. Visita reprogramada para las 14:00."
+  }'
+```
+
+```javascript JavaScript (fetch)
+const response = await fetch('https://api.example.com/api/historiales', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    pendienteId: 42,
+    empleadoId: 3,
+    estado: 'EN_PROGRESO',
+    detalles: 'Cliente llamó para confirmar disponibilidad. Visita reprogramada para las 14:00.',
+  }),
+});
+
+const entry = await response.json();
+```
+
+</CodeGroup>
+
+**Successful response:**
+
+```json
+{
+  "id": 128,
+  "pendienteId": 42,
+  "empleado": {
+    "id": 3,
+    "nombre": "Carlos Quispe",
+    "dni": "45678901",
+    "email": "carlos.quispe@empresa.com",
+    "rol": {
+      "id": "SUPERVISOR",
+      "nombre": "Supervisor"
+    }
+  },
+  "estado": "EN_PROGRESO",
+  "detalles": "Cliente llamó para confirmar disponibilidad. Visita reprogramada para las 14:00.",
+  "fechaCreacion": "2026-06-15T09:12:33"
+}
+```
+
+---
+
+## GET /api/historiales/pendiente/{pendienteId}
+
+Retrieve the complete history for a work order, ordered by `fechaCreacion` descending (newest entry first). This includes both automatically generated entries from state changes and any manually created entries.
+
+### Path parameters
+
+<ParamField path="pendienteId" type="number" required>
+  ID of the work order whose history you want to retrieve.
+</ParamField>
+
+### Response — 200 OK
+
+Returns an array of `HistorialResponse` objects ordered newest-first.
+
+<ResponseField name="id" type="number">History entry ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">Work order ID.</ResponseField>
+<ResponseField name="empleado" type="object">
+  The employee who generated or recorded this entry.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Employee ID.</ResponseField>
+    <ResponseField name="nombre" type="string">Full name.</ResponseField>
+    <ResponseField name="dni" type="string">DNI.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="rol" type="object">Role object with `id` and `nombre`.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="estado" type="string">The state of the work order at the time this entry was created.</ResponseField>
+<ResponseField name="detalles" type="string">Description of what happened.</ResponseField>
+<ResponseField name="fechaCreacion" type="string">ISO 8601 creation timestamp.</ResponseField>
+
+### Example
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/historiales/pendiente/42 \
+  --header 'Authorization: Bearer <token>'
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": 130,
+    "pendienteId": 42,
+    "empleado": { "id": 9, "nombre": "Ana Torres", "dni": "78901234", "email": "ana@empresa.com", "rol": { "id": "TECNICO", "nombre": "Técnico" } },
+    "estado": "FINALIZADO",
+    "detalles": "Instalación completada. Cliente firmó conformidad.",
+    "fechaCreacion": "2026-06-15T14:55:00"
+  },
+  {
+    "id": 129,
+    "pendienteId": 42,
+    "empleado": { "id": 9, "nombre": "Ana Torres", "dni": "78901234", "email": "ana@empresa.com", "rol": { "id": "TECNICO", "nombre": "Técnico" } },
+    "estado": "POR_VALIDAR",
+    "detalles": "Trabajo terminado. Esperando validación del supervisor.",
+    "fechaCreacion": "2026-06-15T14:30:00"
+  },
+  {
+    "id": 128,
+    "pendienteId": 42,
+    "empleado": { "id": 3, "nombre": "Carlos Quispe", "dni": "45678901", "email": "carlos@empresa.com", "rol": { "id": "SUPERVISOR", "nombre": "Supervisor" } },
+    "estado": "EN_PROGRESO",
+    "detalles": "Cliente llamó para confirmar disponibilidad. Visita reprogramada para las 14:00.",
+    "fechaCreacion": "2026-06-15T09:12:33"
+  },
+  {
+    "id": 127,
+    "pendienteId": 42,
+    "empleado": { "id": 3, "nombre": "Carlos Quispe", "dni": "45678901", "email": "carlos@empresa.com", "rol": { "id": "SUPERVISOR", "nombre": "Supervisor" } },
+    "estado": "ASIGNADO",
+    "detalles": "Técnico asignado: Ana Torres.",
+    "fechaCreacion": "2026-06-14T16:00:00"
+  }
+]
+```
+
+<Tip>
+  Use the history endpoint to build a timeline view in your front-end UI. The `estado` field on each entry lets you display which state the order was in when each event occurred, even after the order has moved on to a later state.
+</Tip>

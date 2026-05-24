@@ -1,0 +1,155 @@
+---
+title: 'Pendientes: work orders in field operations'
+description: 'Learn how pendientes model ISP field work orders — their types, fields, lifecycle relationships, and how they connect clients, technicians, and payments.'
+keywords: ['pendiente', 'work order', 'ISP field operations', 'instalacion', 'averia', 'orden de trabajo']
+---
+
+A **pendiente** is the core unit of work in API Registro Pendientes. It represents a single field operation — an installation, a fault repair, a device pickup, or a service relocation — that must be scheduled, assigned to a technician, and tracked from creation to completion. Every interaction a client has with your field team is modelled as a pendiente.
+
+## What a pendiente represents
+
+When a client calls to report a service outage, request a new internet connection, or ask to move their service to a new address, a dispatcher creates a pendiente. That record captures who requested it, when it should be done, where the technician needs to go, and what work needs to be performed.
+
+Pendientes are not simple tickets. Each type carries its own set of sub-entity fields (speeds, device types, VLAN/PPPoE configuration flags), and the record advances through a defined state machine that reflects actual field progress. The API enforces valid state transitions and checks the requesting user's permissions at each step.
+
+## The five work order types
+
+<CardGroup cols={2}>
+  <Card title="AVERIA" icon="triangle-exclamation">
+    A fault or service interruption reported by a client. The technician diagnoses and repairs the issue on-site. May require PPPoE or VLAN reconfiguration after the fix.
+  </Card>
+  <Card title="INSTALACION_INTERNET" icon="wifi">
+    A new internet service installation. Includes speed tier, monthly cost, and network provisioning — PPPoE credentials and/or VLAN assignment are typically required before the job can be finalised.
+  </Card>
+  <Card title="INSTALACION_CAMARAS" icon="video">
+    Installation of surveillance cameras at a client's premises. Tracked separately from internet installations because the billing and equipment workflow differs.
+  </Card>
+  <Card title="RECOJO_DISPOSITIVOS" icon="box-archive">
+    Device pickup from a client location. Records the type of equipment being recovered and the reason for retrieval (e.g., service cancellation, equipment swap).
+  </Card>
+  <Card title="TRASLADO" icon="truck">
+    Relocation of an existing service to a new address. Captures the destination address, the service type being moved, and any new network configuration required at the new site.
+  </Card>
+</CardGroup>
+
+## Core fields
+
+Every pendiente shares a common set of fields regardless of type:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `Long` | Auto-generated primary key. |
+| `fechaCreacion` | `Timestamp` | Record creation timestamp (inherited from `BaseEntity`). |
+| `fechaPendiente` | `LocalDate` | Scheduled date for the field visit. |
+| `registradoPor` | `Empleado` | Employee who created the work order. |
+| `asignadoA` | `Empleado` | Technician assigned to perform the work. Nullable until assigned. |
+| `cliente` | `Cliente` | Client associated with this work order. |
+| `estado` | `EstadoPendiente` | Current lifecycle state (see [Estados](/concepts/estados)). |
+| `estadoTecnico` | `EstadoTecnico` | Network configuration sub-state for PPPoE/VLAN tasks. |
+| `tipo` | `TipoPendiente` | Work order type (one of the five values above). |
+| `prioridad` | `PrioridadPendiente` | Urgency level: `BAJA`, `MEDIA`, `URGENTE`, or `MUY_URGENTE`. |
+| `lugar` | `LugarPendiente` | Geographic zone where the work will be performed. |
+| `empresa` | `EmpresaPendiente` | ISP brand under which the work is performed: `SIMAX`, `WINEX`, or `OTRO`. |
+| `direccion` | `String` | Street address or location description for the technician. |
+
+### Priority levels
+
+<Tabs>
+  <Tab title="BAJA">
+    Low priority. Routine work with no time constraint. Schedule according to technician availability.
+  </Tab>
+  <Tab title="MEDIA">
+    Standard priority. Should be completed within the scheduled date. The default for most installations.
+  </Tab>
+  <Tab title="URGENTE">
+    Urgent. A service-affecting issue or a client with a time-sensitive commitment. Assign as soon as possible.
+  </Tab>
+  <Tab title="MUY_URGENTE">
+    Critical. Immediate dispatch required. Typically reserved for total outages affecting business clients or SLA-bound accounts.
+  </Tab>
+</Tabs>
+
+### Location zones
+
+The `lugar` field places the work order in one of the geographic zones served by the ISP. Valid values are: `ZONA_RURAL`, `JULIACA`, `PUNO`, `CHUCUITO`, `PLATERIA`, `ACORA`, `ILAVE`, `JULI`, `POMATA`, `CHACACHACA`, `YONGUYO`, `ZEPITA`, and `DESAGUADERO`.
+
+<Note>
+  Zone is used for dispatching and reporting. It is separate from `direccion`, which holds the specific street address the technician needs to visit.
+</Note>
+
+## Type-specific sub-entities
+
+Each work order type has its own sub-entity with fields that only apply to that type of work. These are returned as nested objects in the API response.
+
+<AccordionGroup>
+  <Accordion title="INSTALACION_INTERNET sub-fields">
+    Captures everything needed to provision a new subscriber:
+
+    | Field | Description |
+    |---|---|
+    | Speed tier | Download/upload speeds promised to the client. |
+    | Monthly cost | Agreed monthly billing amount. |
+    | PPPoE credentials | Username and password to be configured on the ONU/router. Linked to `estadoTecnico`. |
+    | VLAN ID | The VLAN to be assigned on the access switch. Linked to `estadoTecnico`. |
+
+    Both PPPoE and VLAN provisioning are tracked via the `estadoTecnico` field. The pendiente cannot be finalised until the network team marks the configuration complete.
+  </Accordion>
+  <Accordion title="AVERIA sub-fields">
+    Tracks the details of a fault diagnosis and repair:
+
+    | Field | Description |
+    |---|---|
+    | Fault description | What the technician found and what was done to fix it. |
+    | PPPoE flag | Whether PPPoE reconfiguration was needed after the repair. |
+    | VLAN flag | Whether VLAN reconfiguration was needed after the repair. |
+
+    After a repair, if the technician changes the ONT or reconfigures the access port, network tasks are raised against `estadoTecnico` just as they are for installations.
+  </Accordion>
+  <Accordion title="TRASLADO sub-fields">
+    Records the details of a service relocation:
+
+    | Field | Description |
+    |---|---|
+    | Destination address | New address where the service is being moved. |
+    | Service type | Type of service being relocated (e.g., internet, cameras). |
+    | PPPoE flag | Whether PPPoE must be reconfigured at the new site. |
+    | VLAN flag | Whether a new VLAN must be assigned at the new site. |
+  </Accordion>
+  <Accordion title="INSTALACION_CAMARAS sub-fields">
+    Captures camera installation specifics such as camera count, mounting details, and NVR/DVR configuration notes. Network provisioning for camera VLANs follows the same `estadoTecnico` pattern when applicable.
+  </Accordion>
+  <Accordion title="RECOJO_DISPOSITIVOS sub-fields">
+    | Field | Description |
+    |---|---|
+    | Device type | The type of equipment being collected (ONU, router, DVR, etc.). |
+    | Reason | Why the device is being retrieved (cancellation, upgrade, swap). |
+
+    No network configuration tasks are associated with device pickups. The `estadoTecnico` for these records remains `OK`.
+  </Accordion>
+</AccordionGroup>
+
+## Related entities
+
+A pendiente does not exist in isolation. It sits at the centre of several other domain objects:
+
+<CardGroup cols={2}>
+  <Card title="Cliente" icon="user">
+    Every pendiente is linked to a client record. The client's contact details and service history are available through the relationship.
+  </Card>
+  <Card title="Empleado" icon="id-badge">
+    Two employee references exist: `registradoPor` (the dispatcher) and `asignadoA` (the field technician). Both are foreign keys to the `Empleado` entity.
+  </Card>
+  <Card title="Pagos" icon="receipt">
+    Payments associated with the work order. Recorded by users with the `REGISTRAR_PAGO` permission. Multiple payments can be attached to a single pendiente.
+  </Card>
+  <Card title="Notas" icon="note-sticky">
+    Free-text notes added by any authorised user during the lifecycle of the pendiente. Useful for communicating between dispatcher, technician, and network team.
+  </Card>
+  <Card title="Historial" icon="clock-rotate-left">
+    An append-only audit log of every state change, assignment, and significant update. Accessible to users with `VER_HISTORIAL` permission.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Use the history endpoint to audit a work order's full timeline, including who changed each state and when. This is especially useful for resolving billing disputes or reviewing SLA compliance.
+</Tip>

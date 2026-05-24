@@ -1,0 +1,236 @@
+---
+title: 'Work order lifecycle: states and transitions'
+description: 'Understand the 10 main states, valid transitions, the EstadoTecnico network sub-state system, and how to advance a pendiente through its full lifecycle via the API.'
+keywords: ['estados', 'state machine', 'lifecycle', 'EstadoPendiente', 'EstadoTecnico', 'transiciones']
+---
+
+Every pendiente moves through a defined lifecycle. The API enforces a strict state machine — only certain transitions are allowed, and attempting an invalid transition returns an error. Understanding the state model helps you build correct workflows, debug unexpected failures, and design dashboards that accurately reflect field operations.
+
+## The 10 main states
+
+| State | Meaning in field operations |
+|---|---|
+| `REGISTRADO` | The work order has been created and is waiting for a technician to be assigned. |
+| `ASIGNADO` | A technician has been assigned. The work is scheduled but not yet started. |
+| `EN_PROGRESO` | The technician is actively on-site performing the work. |
+| `PAUSADO` | Work has been interrupted (e.g., missing materials, client not at home) and will resume later. |
+| `REVISION` | The work is under internal review before proceeding to validation. |
+| `POR_VALIDAR` | The technician has reported the work as finished. A supervisor must validate it. |
+| `OBSERVADO` | The supervisor has found an issue during validation and has returned it for the technician to address. |
+| `FINALIZADO` | The work order is complete and accepted. No further changes are permitted. |
+| `POSTERGADO` | The work has been postponed to a future date without being cancelled. |
+| `CANCELADO` | The work order has been cancelled. It can be recovered to `POSTERGADO` if needed. |
+
+<Info>
+  `REVISION` is an intermediate state available in the system but not listed in the standard dispatch flow. It is used by some teams before escalating to `POR_VALIDAR`.
+</Info>
+
+## State transition rules
+
+The API enforces the following transitions. Requesting a transition not listed here will return a `400 Bad Request`.
+
+### From REGISTRADO
+
+| Target state | Action |
+|---|---|
+| `ASIGNADO` | Assign a technician to the work order. |
+| `CANCELADO` | Cancel the work order before any work begins. |
+| `POSTERGADO` | Postpone the work order to a later date. |
+
+### From ASIGNADO
+
+| Target state | Action |
+|---|---|
+| `EN_PROGRESO` | Technician arrives on-site and starts work. |
+| `REGISTRADO` | Reassign to a different technician (removes current assignment). |
+| `CANCELADO` | Cancel after assignment but before work starts. |
+
+### From EN_PROGRESO
+
+| Target state | Action |
+|---|---|
+| `PAUSADO` | Pause work (waiting for parts, access issues, etc.). |
+| `POR_VALIDAR` | Technician marks the job as finished, ready for supervisor review. |
+| `CANCELADO` | Cancel while work is in progress. |
+| `REGISTRADO` | Reassign — removes technician and returns to the dispatch queue. |
+
+### From PAUSADO
+
+| Target state | Action |
+|---|---|
+| `EN_PROGRESO` | Resume work after the pause is resolved. |
+| `POR_VALIDAR` | Mark as finished directly from a paused state. |
+| `CANCELADO` | Cancel a paused work order. |
+| `REGISTRADO` | Reassign from paused state. |
+
+### From POR_VALIDAR
+
+| Target state | Action |
+|---|---|
+| `FINALIZADO` | Supervisor accepts the work. The pendiente is closed. |
+| `OBSERVADO` | Supervisor finds an issue and returns it to the technician. |
+
+### From OBSERVADO
+
+| Target state | Action |
+|---|---|
+| `POR_VALIDAR` | Technician addresses the observation and resubmits for validation. |
+
+### From POSTERGADO
+
+| Target state | Action |
+|---|---|
+| `ASIGNADO` | Assign a technician now that the postponement is resolved. |
+| `POSTERGADO` | Postpone again to a new future date. |
+
+### From CANCELADO
+
+| Target state | Action |
+|---|---|
+| `POSTERGADO` | Recover a cancelled order by converting it to a postponed one. |
+
+<Warning>
+  `FINALIZADO` is a terminal state. There are no transitions out of `FINALIZADO`. If a finalised work order needs to be reopened, a new pendiente must be created.
+</Warning>
+
+## A complete transition reference
+
+The table below gives a single consolidated view of every valid transition in the system:
+
+| From | To | Trigger |
+|---|---|---|
+| REGISTRADO | ASIGNADO | Assign technician |
+| REGISTRADO | CANCELADO | Cancel |
+| REGISTRADO | POSTERGADO | Postpone |
+| ASIGNADO | EN_PROGRESO | Start work |
+| ASIGNADO | REGISTRADO | Reassign |
+| ASIGNADO | CANCELADO | Cancel |
+| EN_PROGRESO | PAUSADO | Pause |
+| EN_PROGRESO | POR_VALIDAR | Finish work |
+| EN_PROGRESO | CANCELADO | Cancel |
+| EN_PROGRESO | REGISTRADO | Reassign |
+| PAUSADO | EN_PROGRESO | Resume |
+| PAUSADO | POR_VALIDAR | Finish |
+| PAUSADO | CANCELADO | Cancel |
+| PAUSADO | REGISTRADO | Reassign |
+| POR_VALIDAR | FINALIZADO | Supervisor approves |
+| POR_VALIDAR | OBSERVADO | Supervisor observes issue |
+| OBSERVADO | POR_VALIDAR | Technician resubmits |
+| POSTERGADO | ASIGNADO | Assign technician |
+| POSTERGADO | POSTERGADO | Postpone again |
+| CANCELADO | POSTERGADO | Recover as postponed |
+
+## The EstadoTecnico sub-state system
+
+Some pendiente types require network configuration work (PPPoE credentials, VLAN assignment) that is performed by a separate network team, not the field technician. The `estadoTecnico` field tracks this sub-process independently of the main `estado`.
+
+### The four sub-states
+
+| Value | Meaning |
+|---|---|
+| `OK` | No pending network tasks. The pendiente can proceed to `FINALIZADO`. |
+| `PENDIENTE_PPPoE` | A PPPoE configuration has been requested. The network team must provision the credentials. |
+| `PENDIENTE_VLAN` | A VLAN assignment has been requested. The network team must configure the access switch port. |
+| `PENDIENTE_PPPoE_Y_VLAN` | Both PPPoE and VLAN configurations are pending. Both must be completed before the order can finalise. |
+
+### EstadoTecnico transitions
+
+| From | To | Trigger |
+|---|---|---|
+| OK | PENDIENTE_PPPoE | Technician or dispatcher requests PPPoE provisioning |
+| OK | PENDIENTE_VLAN | Technician or dispatcher requests VLAN assignment |
+| PENDIENTE_PPPoE | PENDIENTE_PPPoE_Y_VLAN | VLAN also requested while PPPoE is pending |
+| PENDIENTE_VLAN | PENDIENTE_PPPoE_Y_VLAN | PPPoE also requested while VLAN is pending |
+| PENDIENTE_PPPoE | OK | Network team completes PPPoE configuration |
+| PENDIENTE_VLAN | OK | Network team completes VLAN configuration |
+| PENDIENTE_PPPoE_Y_VLAN | OK | Network team completes both configurations |
+
+<Note>
+  The `estadoTecnico` is independent of `estado`. A pendiente can be in `EN_PROGRESO` with `estadoTecnico = PENDIENTE_PPPoE`. The field technician can mark work as done (`POR_VALIDAR`) while the network task is still outstanding — but supervisors should check `estadoTecnico` before approving `FINALIZADO`.
+</Note>
+
+## Changing state via the API
+
+State transitions are performed with a single `PUT` request:
+
+```http
+PUT /api/pendientes/{id}/estado
+```
+
+The request body specifies the target state and, for assignment transitions, the technician to assign:
+
+<Tabs>
+  <Tab title="Assign technician">
+    ```json
+    {
+      "estado": "ASIGNADO",
+      "empleadoId": 42
+    }
+    ```
+  </Tab>
+  <Tab title="Start work">
+    ```json
+    {
+      "estado": "EN_PROGRESO"
+    }
+    ```
+  </Tab>
+  <Tab title="Finish work">
+    ```json
+    {
+      "estado": "POR_VALIDAR"
+    }
+    ```
+  </Tab>
+  <Tab title="Finalise">
+    ```json
+    {
+      "estado": "FINALIZADO"
+    }
+    ```
+  </Tab>
+  <Tab title="Postpone">
+    ```json
+    {
+      "estado": "POSTERGADO",
+      "fechaPendiente": "2026-06-15"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+The API validates both the transition legality and the caller's permissions before applying the change. If either check fails, the response is `400 Bad Request` or `403 Forbidden` respectively.
+
+## Example: complete internet installation flow
+
+The following walkthrough shows a typical internet installation from creation to completion.
+
+<Steps>
+  <Step title="Create the pendiente">
+    A dispatcher creates a new pendiente with `tipo = INSTALACION_INTERNET`, sets `fechaPendiente`, links it to the client, and sets `prioridad = MEDIA`. The initial `estado` is `REGISTRADO` and `estadoTecnico` is `OK`.
+  </Step>
+  <Step title="Assign a technician">
+    The dispatcher calls `PUT /api/pendientes/{id}/estado` with `estado = ASIGNADO` and the technician's `empleadoId`. The state moves from `REGISTRADO` → `ASIGNADO`.
+
+    <Info>Requires the `ASIGNAR_TECNICO` permission.</Info>
+  </Step>
+  <Step title="Technician starts work on-site">
+    The technician arrives at the client's address and calls the API with `estado = EN_PROGRESO`. State moves from `ASIGNADO` → `EN_PROGRESO`.
+  </Step>
+  <Step title="Request PPPoE provisioning">
+    After cabling is complete, the technician raises a PPPoE request: `PUT /api/pendientes/{id}/estadoTecnico` with `estadoTecnico = PENDIENTE_PPPoE`. The `estadoTecnico` moves from `OK` → `PENDIENTE_PPPoE`.
+  </Step>
+  <Step title="Network team provisions PPPoE">
+    A network engineer assigns credentials and marks the task done: `PUT /api/pendientes/{id}/estadoTecnico` with `estadoTecnico = OK`. The `estadoTecnico` returns to `OK`.
+  </Step>
+  <Step title="Technician marks work as finished">
+    With cabling done and PPPoE configured, the technician submits: `estado = POR_VALIDAR`. State moves from `EN_PROGRESO` → `POR_VALIDAR`.
+  </Step>
+  <Step title="Supervisor finalises the work order">
+    A supervisor reviews the job, confirms `estadoTecnico = OK`, and calls the API with `estado = FINALIZADO`. The pendiente is now closed.
+  </Step>
+</Steps>
+
+<Tip>
+  If the supervisor discovers an issue during review, they can move the pendiente to `OBSERVADO` instead of `FINALIZADO`. The technician addresses the issue and resubmits to `POR_VALIDAR` for a second review.
+</Tip>

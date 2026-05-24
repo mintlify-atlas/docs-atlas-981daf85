@@ -1,0 +1,306 @@
+---
+title: 'Work Orders (Pendientes) — Core CRUD Endpoints'
+description: 'Create, retrieve, filter, and delete field work orders. Includes full-text filter options with pagination and a utility endpoint for valid enum values.'
+keywords: ['pendientes', 'work orders', 'create', 'filter', 'pagination', 'CRUD']
+---
+
+A *pendiente* is the central resource of the system — a field work order assigned to one or more technicians. Each pendiente has a type (avería, instalación, traslado, etc.), a state lifecycle, and links to a client, location, and responsible employees. This page covers the core CRUD operations. For state transitions see [State Management](/api/pendientes-estados), and for type-specific data see [Work Order Types](/api/pendientes-tipos).
+
+<Note>
+  All endpoints under `/api/pendientes` require a valid `Authorization: Bearer <token>` header. See [Authentication](/api/auth) for how to obtain a token.
+</Note>
+
+---
+
+## GET /api/pendientes/{id}
+
+Retrieve a single work order by its internal ID.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the pendiente.
+</ParamField>
+
+### Response — 200 OK
+
+Returns a `PendienteResponse` object. See the [filter endpoint](#post-apipendientesfiltrar) for the full field list — the same structure is returned here.
+
+```bash cURL
+curl --request GET \
+  --url https://api.example.com/api/pendientes/42 \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+## POST /api/pendientes/filtrar
+
+Search and paginate work orders using any combination of filter criteria. Returns a Spring `Page<PendienteResponse>`.
+
+Pagination and sorting are controlled via **query parameters** on the URL. Filter criteria are sent in the **request body**.
+
+### Query parameters (pagination/sorting)
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="10">
+  Number of results per page.
+</ParamField>
+
+<ParamField query="sort" type="string" default="fechaCreacion,desc">
+  Sort field and direction, comma-separated. E.g. `fechaPendiente,asc` or `fechaCreacion,desc`.
+</ParamField>
+
+### Request body (filter criteria)
+
+<ParamField body="clienteId" type="number">
+  Filter to work orders belonging to a specific client ID.
+</ParamField>
+
+<ParamField body="usuarioId" type="number">
+  Filter by the user (not employee) associated with the work order.
+</ParamField>
+
+<ParamField body="asignadoAId" type="number">
+  Filter by the technician (employee ID) the work order is assigned to.
+</ParamField>
+
+<ParamField body="registradoPorId" type="number">
+  Filter by the employee who created the work order.
+</ParamField>
+
+<ParamField body="estados" type="string[]">
+  Filter by one or more states. E.g. `["ASIGNADO", "EN_PROGRESO"]`. Valid values: `REGISTRADO`, `ASIGNADO`, `EN_PROGRESO`, `PAUSADO`, `REVISION`, `POR_VALIDAR`, `OBSERVADO`, `FINALIZADO`, `POSTERGADO`, `CANCELADO`.
+</ParamField>
+
+<ParamField body="estadosTecnico" type="string[]">
+  Filter by one or more technical sub-states. Valid values: `OK`, `PENDIENTE_PPPoE`, `PENDIENTE_VLAN`, `PENDIENTE_PPPoE_Y_VLAN`.
+</ParamField>
+
+<ParamField body="fechaPendiente" type="string">
+  Filter to work orders scheduled for a specific date (ISO 8601 datetime).
+</ParamField>
+
+<ParamField body="tipo" type="string">
+  Work order type. One of: `AVERIA`, `INSTALACION_INTERNET`, `INSTALACION_CAMARAS`, `RECOJO_DISPOSITIVOS`, `TRASLADO`.
+</ParamField>
+
+<ParamField body="prioridad" type="string">
+  Priority level. One of: `BAJA`, `MEDIA`, `URGENTE`, `MUY_URGENTE`.
+</ParamField>
+
+<ParamField body="lugar" type="string">
+  Geographic zone. One of: `ZONA_RURAL`, `JULIACA`, `PUNO`, `CHUCUITO`, `PLATERIA`, `ACORA`, `ILAVE`, `JULI`, `POMATA`, `CHACACHACA`, `YONGUYO`, `ZEPITA`, `DESAGUADERO`.
+</ParamField>
+
+<ParamField body="titulo" type="string">
+  Optional partial text search against the work order title/description.
+</ParamField>
+
+### Response — 200 OK
+
+Returns a Spring `Page` wrapper with the following shape:
+
+<ResponseField name="content" type="PendienteResponse[]">
+  Array of work orders matching the filter criteria.
+  <Expandable title="PendienteResponse fields">
+    <ResponseField name="id" type="number">Work order ID.</ResponseField>
+    <ResponseField name="estado" type="string">Current state enum value.</ResponseField>
+    <ResponseField name="tipo" type="string">Work order type enum value.</ResponseField>
+    <ResponseField name="prioridad" type="string">Priority enum value.</ResponseField>
+    <ResponseField name="lugar" type="string">Geographic zone enum value.</ResponseField>
+    <ResponseField name="empresa" type="string">Company brand enum value.</ResponseField>
+    <ResponseField name="direccion" type="string">Street address for the job.</ResponseField>
+    <ResponseField name="fechaPendiente" type="string">Scheduled date for the field visit.</ResponseField>
+    <ResponseField name="fechaCreacion" type="string">Timestamp when the record was created.</ResponseField>
+    <ResponseField name="clienteId" type="number">ID of the associated client.</ResponseField>
+    <ResponseField name="registradoPorId" type="number">ID of the employee who registered the order.</ResponseField>
+    <ResponseField name="asignadoA" type="object">
+      The technician currently assigned to this order (may be null).
+      <Expandable title="properties">
+        <ResponseField name="id" type="number">Technician ID.</ResponseField>
+        <ResponseField name="nombre" type="string">Technician name.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="totalElements" type="number">
+  Total number of records matching the filter, across all pages.
+</ResponseField>
+
+<ResponseField name="totalPages" type="number">
+  Total number of pages.
+</ResponseField>
+
+<ResponseField name="number" type="number">
+  Current page index (zero-based).
+</ResponseField>
+
+<ResponseField name="size" type="number">
+  Page size used for this response.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://api.example.com/api/pendientes/filtrar?page=0&size=10&sort=fechaPendiente,asc' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "estados": ["ASIGNADO"],
+    "lugar": "JULIACA"
+  }'
+```
+
+```javascript JavaScript (fetch)
+const response = await fetch(
+  'https://api.example.com/api/pendientes/filtrar?page=0&size=10&sort=fechaPendiente,asc',
+  {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      estados: ['ASIGNADO'],
+      lugar: 'JULIACA',
+    }),
+  }
+);
+
+const page = await response.json();
+```
+
+</CodeGroup>
+
+---
+
+## POST /api/pendientes/
+
+Create a new work order. The order is created in `REGISTRADO` state.
+
+### Request body
+
+<ParamField body="clienteId" type="number" required>
+  ID of the client this work order is for.
+</ParamField>
+
+<ParamField body="tipo" type="string" required>
+  Work order type. One of: `AVERIA`, `INSTALACION_INTERNET`, `INSTALACION_CAMARAS`, `RECOJO_DISPOSITIVOS`, `TRASLADO`.
+</ParamField>
+
+<ParamField body="prioridad" type="string" required>
+  Priority. One of: `BAJA`, `MEDIA`, `URGENTE`, `MUY_URGENTE`.
+</ParamField>
+
+<ParamField body="lugar" type="string" required>
+  Geographic zone where the work will be performed.
+</ParamField>
+
+<ParamField body="empresa" type="string" required>
+  Company brand. One of: `SIMAX`, `WINEX`, `OTRO`.
+</ParamField>
+
+<ParamField body="direccion" type="string" required>
+  Street address for the field visit.
+</ParamField>
+
+<ParamField body="fechaPendiente" type="string" required>
+  Scheduled datetime in ISO 8601 format (e.g. `2026-06-15T09:00:00`).
+</ParamField>
+
+<ParamField body="registradoPorId" type="number" required>
+  ID of the employee creating this work order.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the newly created `PendienteResponse` object.
+
+<Tip>
+  After creating a pendiente, create the type-specific details record (e.g. `POST /api/pendientes/traslado`) before assigning a technician. See [Work Order Types](/api/pendientes-tipos).
+</Tip>
+
+### Example
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/ \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "clienteId": 15,
+    "tipo": "INSTALACION_INTERNET",
+    "prioridad": "URGENTE",
+    "lugar": "JULIACA",
+    "empresa": "SIMAX",
+    "direccion": "Jr. Lampa 340",
+    "fechaPendiente": "2026-06-15T09:00:00",
+    "registradoPorId": 3
+  }'
+```
+
+---
+
+## DELETE /api/pendientes/{id}
+
+Soft-delete a work order. The record is not removed from the database; it is marked as deleted and excluded from normal queries.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  The ID of the pendiente to delete.
+</ParamField>
+
+<Warning>
+  This operation cannot be undone through the API. Contact your database administrator if you need to restore a deleted record.
+</Warning>
+
+```bash cURL
+curl --request DELETE \
+  --url https://api.example.com/api/pendientes/42 \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+## POST /api/pendientes/filtros
+
+Returns the available enum options for filter dropdowns. Use this endpoint to populate UI filter controls dynamically rather than hard-coding enum values in the client.
+
+### Response — 200 OK
+
+Returns an object with arrays of valid values for each filterable field.
+
+<ResponseField name="estados" type="string[]">
+  All valid `EstadoPendiente` values.
+</ResponseField>
+
+<ResponseField name="tipos" type="string[]">
+  All valid `TipoPendiente` values.
+</ResponseField>
+
+<ResponseField name="prioridades" type="string[]">
+  All valid `PrioridadPendiente` values.
+</ResponseField>
+
+<ResponseField name="lugares" type="string[]">
+  All valid `LugarPendiente` values.
+</ResponseField>
+
+<ResponseField name="empresas" type="string[]">
+  All valid `EmpresaPendiente` values.
+</ResponseField>
+
+```bash cURL
+curl --request POST \
+  --url https://api.example.com/api/pendientes/filtros \
+  --header 'Authorization: Bearer <token>'
+```

@@ -1,0 +1,213 @@
+---
+title: 'Pagos — Payment Recording for Work Orders API'
+description: 'Record, retrieve, and manage payments associated with field work orders. Supports multiple payment methods including cash, bank transfers, and third-party processors.'
+keywords: ['payments', 'pagos', 'work order payments', 'billing', 'API reference']
+---
+
+The Payments API records financial transactions associated with work orders (pendientes). Each payment captures the amount, method, date, and the client, employee, and work order it relates to. This provides a full audit trail of what was collected in the field.
+
+<Note>
+  All endpoints require a valid Bearer token. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## List active payments
+
+`GET /api/pagos`
+
+Returns a paginated list of payments where `vigente = true`.
+
+### Query parameters
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of records per page.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/pagos?page=0&size=20' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="number">Unique payment ID.</ResponseField>
+<ResponseField name="empleado" type="object">
+  The employee who recorded the payment. See [EmpleadoResponse](/api/empleados) for field details.
+</ResponseField>
+<ResponseField name="cliente" type="object">
+  The client who made the payment. See [ClienteResponse](/api/clientes) for field details.
+</ResponseField>
+<ResponseField name="pendienteId" type="number">ID of the associated work order.</ResponseField>
+<ResponseField name="monto" type="number">Payment amount.</ResponseField>
+<ResponseField name="fechaPago" type="string">Payment date in `YYYY-MM-DD` format.</ResponseField>
+<ResponseField name="metodoPago" type="string">Payment method. One of: `BCP`, `EFECTIVO`, `LOS_ANDES`, `OTRO`.</ResponseField>
+<ResponseField name="referencia" type="string">Reference number or note (e.g., bank transaction ID).</ResponseField>
+<ResponseField name="vigente" type="boolean">`true` if the payment record is active.</ResponseField>
+
+---
+
+## Create a payment
+
+`POST /api/pagos`
+
+Records a new payment for a work order.
+
+### Request body
+
+<ParamField body="empleadoId" type="number" required>
+  ID of the employee recording the payment.
+</ParamField>
+
+<ParamField body="clienteId" type="number" required>
+  ID of the client making the payment.
+</ParamField>
+
+<ParamField body="pendienteId" type="number" required>
+  ID of the work order this payment applies to.
+</ParamField>
+
+<ParamField body="monto" type="number" required>
+  Payment amount as a decimal (e.g., `150.00`).
+</ParamField>
+
+<ParamField body="fechaPago" type="string" required>
+  Payment date in `YYYY-MM-DD` format.
+</ParamField>
+
+<ParamField body="metodoPago" type="string" required>
+  Payment method. One of: `BCP`, `EFECTIVO`, `LOS_ANDES`, `OTRO`.
+</ParamField>
+
+<ParamField body="referencia" type="string">
+  Reference string for the transaction (e.g., a bank operation number or receipt ID). Optional but recommended for non-cash payments.
+</ParamField>
+
+<Tip>
+  Always include a `referencia` value for bank transfer methods (`BCP`, `LOS_ANDES`) to support reconciliation. For `EFECTIVO`, this field can describe the receipt number.
+</Tip>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/pagos' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "empleadoId": 3,
+    "clienteId": 42,
+    "pendienteId": 15,
+    "monto": 150.00,
+    "fechaPago": "2026-05-24",
+    "metodoPago": "BCP",
+    "referencia": "OP-20260524-0045"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Update a payment
+
+`PUT /api/pagos/{id}`
+
+Updates an existing payment record (e.g., to correct the amount or add a reference).
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the payment to update.
+</ParamField>
+
+All body fields from [Create a payment](#create-a-payment) are accepted. Only included fields are updated.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/pagos/28' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "referencia": "OP-20260524-0046",
+    "monto": 175.00
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Delete a payment
+
+`DELETE /api/pagos/{id}`
+
+Soft-deletes a payment by setting `vigente = false`. The record is retained for audit purposes.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the payment to deactivate.
+</ParamField>
+
+<Warning>
+  Payment records are preserved as part of the audit trail. Deactivating a payment removes it from active listings but the record remains in the database.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/pagos/28' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Get payments for a work order
+
+`GET /api/pagos/pendiente/{pendienteId}`
+
+Returns all payment records associated with a specific work order.
+
+### Path parameters
+
+<ParamField path="pendienteId" type="number" required>
+  The ID of the work order to retrieve payments for.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/pagos/pendiente/15' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Enumerations
+
+### MetodoPago
+
+| Value | Description |
+|-------|-------------|
+| `BCP` | Banco de Crédito del Perú transfer |
+| `EFECTIVO` | Cash payment |
+| `LOS_ANDES` | Caja Los Andes transfer |
+| `OTRO` | Other payment method |

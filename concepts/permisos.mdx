@@ -1,0 +1,240 @@
+---
+title: 'Role-based permissions and access control'
+description: 'How the bitmask permission system works, what each of the 14 permissions controls, how to inspect token permissions, and how to design roles for each team member type.'
+---
+
+Access control in API Registro Pendientes is built on a role-based permission system. Every employee account is linked to exactly one role. That role carries a bitmask integer whose bits map directly to the 14 defined permissions. When a request arrives, the API checks whether the caller's role has the required bit set before executing any operation.
+
+## How roles work
+
+The `Rol` entity has three meaningful fields: `id` (a string slug), `nombre` (display name), `descripcion`, and `permisos` (a `Long` bitmask). There is no permission hierarchy or inheritance — a role either has a permission or it does not.
+
+```json
+{
+  "id": "tecnico-campo",
+  "nombre": "Técnico de campo",
+  "descripcion": "Technician who executes assigned field work orders",
+  "permisos": 8416
+}
+```
+
+The `permisos` value `8416` in the example above is the sum of the bit values for the permissions that role holds. You can check which permissions are active by examining individual bits (bit 0 is the least significant bit).
+
+<Note>
+  Because permissions are stored as a single `Long`, the maximum number of distinct permissions is 64. The current system uses 14 (bits 0–13).
+</Note>
+
+## The 14 permissions
+
+| Bit value | Permission | Controls |
+|-----------|------------|----------|
+| 1 | `REGISTRAR_PENDIENTE` | Create new work orders. |
+| 2 | `EDITAR_PENDIENTE` | Edit the fields of an existing work order (type, address, priority, etc.). |
+| 4 | `VER_DETALLE_PENDIENTE` | View the full detail of a single work order. |
+| 8 | `VER_TODOS_PENDIENTES` | List and search all work orders across all clients and technicians. |
+| 16 | `ASIGNAR_TECNICO` | Assign or reassign a technician to a work order. |
+| 32 | `ASIGNAR_PPOE` | Assign PPPoE credentials to a work order's network configuration. |
+| 64 | `ASIGNAR_VLAN` | Assign VLAN configuration to a work order. |
+| 128 | `COMENZAR_TRABAJO` | Start field work — move a work order to `EN_PROGRESO`. |
+| 256 | `PARAR_TRABAJO` | Pause field work. |
+| 512 | `CONTINUAR_TRABAJO` | Resume paused field work. |
+| 1024 | `FINALIZAR_TRABAJO` | Mark field work as finished. |
+| 2048 | `VER_PENDIENTES_HISTORIAL` | View the full history of all work orders. |
+| 4096 | `REVISAR_GASTOS` | Review expenses and costs associated with work orders. |
+| 8192 | `REVISAR_FINALIZADOS` | Review finalized work orders. |
+
+## Permission-to-action mapping
+
+API actions are gated by specific permissions. The table below maps documented actions to the permission(s) required (from the README permission matrix).
+
+| API action | Required permission |
+|---|---|
+| Assign technician | `ASIGNAR_TECNICO` |
+| Reassign technician | `ASIGNAR_TECNICO` |
+| Start work | `COMENZAR_TRABAJO` |
+| Pause work | `PARAR_TRABAJO` |
+| Resume work | `CONTINUAR_TRABAJO` |
+| Finish work | `FINALIZAR_TRABAJO` |
+| Assign PPPoE | `ASIGNAR_PPOE` |
+| Assign VLAN | `ASIGNAR_VLAN` |
+| Edit work order | `EDITAR_PENDIENTE` |
+| View work order detail | `VER_DETALLE_PENDIENTE` |
+| View all work orders | `VER_TODOS_PENDIENTES` |
+| View history | `VER_PENDIENTES_HISTORIAL` |
+| Review expenses | `REVISAR_GASTOS` |
+| Review finalized orders | `REVISAR_FINALIZADOS` |
+
+## Checking your token's permissions
+
+To inspect the permissions attached to the authenticated session, call `GET /api/usuarios/usuario` (passing your Bearer token). The response includes the user's role with its `permisos` bitmask:
+
+```json
+{
+  "id": 7,
+  "nombre": "Juan Quispe",
+  "email": "jquispe@simax.pe",
+  "rol": {
+    "id": "tecnico-campo",
+    "nombre": "Técnico de campo",
+    "permisos": 1924
+  }
+}
+```
+
+To determine which permissions are active, check each bit of the `permisos` value. In JavaScript:
+
+```javascript
+const PERMISSIONS = {
+  REGISTRAR_PENDIENTE:    1,    // bit value 1
+  EDITAR_PENDIENTE:       2,    // bit value 2
+  VER_DETALLE_PENDIENTE:  4,    // bit value 4
+  VER_TODOS_PENDIENTES:   8,    // bit value 8
+  ASIGNAR_TECNICO:        16,   // bit value 16
+  ASIGNAR_PPOE:           32,   // bit value 32
+  ASIGNAR_VLAN:           64,   // bit value 64
+  COMENZAR_TRABAJO:       128,  // bit value 128
+  PARAR_TRABAJO:          256,  // bit value 256
+  CONTINUAR_TRABAJO:      512,  // bit value 512
+  FINALIZAR_TRABAJO:      1024, // bit value 1024
+  VER_PENDIENTES_HISTORIAL: 2048, // bit value 2048
+  REVISAR_GASTOS:         4096, // bit value 4096
+  REVISAR_FINALIZADOS:    8192, // bit value 8192
+};
+
+function hasPermission(permisosMask, permission) {
+  return (permisosMask & PERMISSIONS[permission]) !== 0;
+}
+
+// Example: check if the technician can start work
+hasPermission(1924, 'COMENZAR_TRABAJO'); // true  (128 is in 1924)
+hasPermission(1924, 'VER_DETALLE_PENDIENTE'); // true  (4 is in 1924)
+hasPermission(1924, 'ASIGNAR_TECNICO'); // false (16 is not in 1924)
+```
+
+## Module access control
+
+Beyond operation-level permissions, the system also controls which UI screens (modules) are visible to each role. This is managed through the `ModuloRol` entity, which links a `Modulo` to a `Rol`.
+
+### Modulo structure
+
+Each `Modulo` represents a screen or section of the front-end application:
+
+| Field | Description |
+|---|---|
+| `nombre` | Module name (e.g., `"Pendientes"`, `"Reportes"`). |
+| `descripcion` | Human-readable description. |
+| `icono` | Icon identifier used in the navigation menu. |
+| `ruta` | Front-end route path (e.g., `/pendientes`, `/admin/roles`). |
+| `moduloPadre` | Optional reference to a parent module, forming a tree for nested navigation. |
+
+### ModuloRol
+
+A `ModuloRol` record grants a specific role read access to a specific module. If no `ModuloRol` record exists linking role `R` to module `M`, users with role `R` will not see module `M` in their navigation.
+
+<Info>
+  Module access is a separate layer from operation permissions. A user can have the `VER_TODOS` permission but still be excluded from the reporting module if no `ModuloRol` record grants their role access to it.
+</Info>
+
+## Example: creating a "Technician" role
+
+A field technician needs to view their assigned work orders, execute field work, and request network configuration — but should not be able to create, cancel, or finalise orders.
+
+<Steps>
+  <Step title="Identify the required permissions">
+    The technician role needs:
+
+    - `VER_DETALLE_PENDIENTE` (4) — view work order details
+    - `COMENZAR_TRABAJO` (128) — start field work
+    - `PARAR_TRABAJO` (256) — pause field work
+    - `CONTINUAR_TRABAJO` (512) — resume paused work
+    - `FINALIZAR_TRABAJO` (1024) — mark work as finished
+    - `VER_PENDIENTES_HISTORIAL` (2048) — view order history
+
+    The technician does **not** need: `REGISTRAR_PENDIENTE`, `EDITAR_PENDIENTE`, `ASIGNAR_TECNICO`, `REVISAR_GASTOS`, or `REVISAR_FINALIZADOS`.
+  </Step>
+  <Step title="Calculate the bitmask">
+    Sum the bit values for the required permissions:
+
+    ```
+    VER_DETALLE_PENDIENTE  =   4
+    COMENZAR_TRABAJO       = 128
+    PARAR_TRABAJO          = 256
+    CONTINUAR_TRABAJO      = 512
+    FINALIZAR_TRABAJO      = 1024
+    VER_PENDIENTES_HISTORIAL = 2048
+                               Total: 3972
+    ```
+  </Step>
+  <Step title="Create the role via the API">
+    ```http
+    POST /api/usuarios/roles
+    ```
+
+    ```json
+    {
+      "id": "tecnico-campo",
+      "nombre": "Técnico de campo",
+      "descripcion": "Field technician — executes assigned work orders",
+      "permisos": 3972
+    }
+    ```
+  </Step>
+  <Step title="Grant module access">
+    Use the sync endpoint to give the technician access to application modules:
+
+    ```http
+    POST /api/usuarios/modulos/sync
+    ```
+
+    ```json
+    {
+      "rolId": "tecnico-campo",
+      "moduloIds": [1, 3]
+    }
+    ```
+
+    This replaces the full module list for the role. Use `GET /api/usuarios/modulos` to retrieve available module IDs.
+  </Step>
+  <Step title="Assign the role to a user">
+    When creating a user account, set the `idRol` field:
+
+    ```json
+    {
+      "nombre": "María Condori",
+      "email": "mcondori@winex.pe",
+      "idRol": "tecnico-campo"
+    }
+    ```
+
+    All subsequent API calls authenticated as this user will be checked against the `3972` bitmask.
+  </Step>
+</Steps>
+
+<Warning>
+  Changing a role's `permisos` bitmask immediately affects all users assigned to that role. There is no per-user permission override. If a specific user needs different access, create a separate role for them.
+</Warning>
+
+## Common role patterns
+
+<AccordionGroup>
+  <Accordion title="Dispatcher / coordinator">
+    Needs: `REGISTRAR_PENDIENTE` (1), `EDITAR_PENDIENTE` (2), `VER_DETALLE_PENDIENTE` (4), `VER_TODOS_PENDIENTES` (8), `ASIGNAR_TECNICO` (16), `VER_PENDIENTES_HISTORIAL` (2048).
+
+    Bitmask: `1 + 2 + 4 + 8 + 16 + 2048 = 2079`
+  </Accordion>
+  <Accordion title="Network engineer">
+    Needs: `VER_DETALLE_PENDIENTE` (4), `ASIGNAR_PPOE` (32), `ASIGNAR_VLAN` (64).
+
+    Bitmask: `4 + 32 + 64 = 100`
+  </Accordion>
+  <Accordion title="Field technician">
+    Needs: `VER_DETALLE_PENDIENTE` (4), `COMENZAR_TRABAJO` (128), `PARAR_TRABAJO` (256), `CONTINUAR_TRABAJO` (512), `FINALIZAR_TRABAJO` (1024), `VER_PENDIENTES_HISTORIAL` (2048).
+
+    Bitmask: `4 + 128 + 256 + 512 + 1024 + 2048 = 3972`
+  </Accordion>
+  <Accordion title="Full administrator">
+    All 14 permissions set. Bitmask: `1 + 2 + 4 + 8 + 16 + 32 + 64 + 128 + 256 + 512 + 1024 + 2048 + 4096 + 8192 = 16383`.
+
+    Reserve this role for system administrators only.
+  </Accordion>
+</AccordionGroup>

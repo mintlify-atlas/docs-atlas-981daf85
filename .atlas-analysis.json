@@ -1,0 +1,127 @@
+{
+  "projectType": "api-service",
+  "projectName": "API Registro Pendientes",
+  "projectDescription": "A Spring Boot REST API for managing ISP field work orders (pendientes), technician assignments, client records, payments, and real-time notifications for internet service providers.",
+  "theme": "luma",
+  "primaryColor": "#1E6FD9",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/pendientes",
+              "concepts/estados",
+              "concepts/permisos"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/deployment",
+              "guides/websockets",
+              "guides/file-uploads"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth"
+            ]
+          },
+          {
+            "group": "Work Orders",
+            "pages": [
+              "api/pendientes",
+              "api/pendientes-estados",
+              "api/pendientes-tipos",
+              "api/pendientes-tiempos",
+              "api/notas",
+              "api/historial"
+            ]
+          },
+          {
+            "group": "People & Organization",
+            "pages": [
+              "api/clientes",
+              "api/empleados",
+              "api/usuarios"
+            ]
+          },
+          {
+            "group": "Catalog & Payments",
+            "pages": [
+              "api/productos",
+              "api/catalogos",
+              "api/pagos"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/notificaciones",
+              "api/app-version"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Work order (pendiente) lifecycle management with 10-state workflow",
+    "JWT-based authentication with role and permission bitmask system",
+    "Real-time WebSocket notifications via STOMP protocol",
+    "Multiple work order types: fault repair, internet installation, camera installation, device pickup, and relocation",
+    "Technician assignment, time tracking, and progress notes with image uploads",
+    "Client and employee management with role-based access control",
+    "Product catalog and payment recording with multiple payment methods",
+    "Audit history trail for all state transitions",
+    "OpenAPI/Swagger documentation at /swagger-ui"
+  ],
+  "publicApiSurface": [
+    "POST /auth — Login and obtain JWT token",
+    "GET /auth/validar-token — Validate token",
+    "GET/POST /api/pendientes — List and create work orders",
+    "PUT /api/pendientes/{id}/estado — Change work order state",
+    "PUT /api/pendientes/{id}/asignar — Assign technician",
+    "PUT /api/pendientes/{id}/postergar — Postpone work order",
+    "POST /api/pendientes/filtrar — Filter work orders with pagination",
+    "GET/POST /api/pendientes/{id}/instalacion-internet — Internet installation details",
+    "GET/POST /api/pendientes/{id}/averia — Fault repair details",
+    "GET/POST /api/pendientes/{id}/traslado — Relocation details",
+    "GET/POST /api/pendientes/{id}/instalacion-camaras — Camera installation details",
+    "GET/POST /api/pendientes/{id}/recojo-dispositivo — Device pickup details",
+    "GET/POST/PUT /api/pendientes/tiempos — Time tracking sessions",
+    "GET/POST/PUT /api/notas — Technician notes with images",
+    "GET/POST /api/historiales — State change audit history",
+    "GET/POST/PUT/DELETE /api/clientes — Client management",
+    "GET/POST/PUT/DELETE /api/empleados — Employee management",
+    "GET/POST/PUT/DELETE /api/usuarios — User account management",
+    "GET/POST/PUT/DELETE /api/usuarios/roles — Role management",
+    "GET/POST/PUT /api/usuarios/modulos — Module access control",
+    "GET/POST/PUT/DELETE /api/productos — Product management",
+    "GET/POST/PUT/DELETE /api/catalogos — Service catalog management",
+    "GET/POST/PUT/DELETE /api/pagos — Payment recording",
+    "GET/POST/PUT /api/notificaciones — In-app notifications",
+    "WebSocket /ws (STOMP) — Real-time notifications on /topic/usuario/{userId}",
+    "GET /app/app-version/vigentes — Active app versions",
+    "GET /app/app-version/ultima — Latest app version"
+  ]
+}

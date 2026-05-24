@@ -1,0 +1,179 @@
+---
+title: 'Work Order State Management'
+description: 'Change a work order state, assign a technician, postpone to a new date, and update the technical network configuration state via query parameters.'
+---
+
+Every pendiente moves through a defined state lifecycle. This page documents the endpoints that drive those transitions: changing state, assigning a technician, postponing to a future date, and reading the current `estadoTecnico` field.
+
+## State lifecycle overview
+
+The diagram below shows the typical progression of a work order:
+
+```
+REGISTRADO → ASIGNADO → EN_PROGRESO → REVISION → POR_VALIDAR → FINALIZADO
+                              ↓                        ↓
+                           PAUSADO               OBSERVADO
+                              ↓
+                         POSTERGADO / CANCELADO
+```
+
+<Note>
+  Not all transitions are valid from every state. The API enforces valid transitions server-side and returns a `400 Bad Request` if an invalid transition is attempted.
+</Note>
+
+**Full enum list for `EstadoPendiente`:** `REGISTRADO`, `ASIGNADO`, `EN_PROGRESO`, `PAUSADO`, `REVISION`, `POR_VALIDAR`, `OBSERVADO`, `FINALIZADO`, `POSTERGADO`, `CANCELADO`.
+
+---
+
+## PUT /api/pendientes/{id}/estado
+
+Change the state of a work order. The new state is passed as a query parameter.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente whose state is being changed.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="nuevoEstado" type="string" required>
+  The target `EstadoPendiente` value. Must be a permitted transition from the current state. One of: `REGISTRADO`, `ASIGNADO`, `EN_PROGRESO`, `PAUSADO`, `REVISION`, `POR_VALIDAR`, `OBSERVADO`, `FINALIZADO`, `POSTERGADO`, `CANCELADO`.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the updated `PendienteResponse` with the new state reflected.
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/42/estado?nuevoEstado=EN_PROGRESO' \
+  --header 'Authorization: Bearer <token>'
+```
+
+```javascript JavaScript (fetch)
+const response = await fetch(
+  'https://api.example.com/api/pendientes/42/estado?nuevoEstado=EN_PROGRESO',
+  {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  }
+);
+```
+
+</CodeGroup>
+
+---
+
+## PUT /api/pendientes/{id}/asignar
+
+Assign a technician to a work order. The employee ID is passed as a query parameter.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente to assign.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="idAsignado" type="number" required>
+  ID of the technician (employee) to assign to this work order.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the updated `PendienteResponse` with the assigned technician and updated state.
+
+<Tip>
+  You can reassign a technician on an already-assigned work order. The state will not change if the order is already past `ASIGNADO`.
+</Tip>
+
+### Example
+
+```bash cURL
+curl --request PUT \
+  --url 'https://api.example.com/api/pendientes/42/asignar?idAsignado=9' \
+  --header 'Authorization: Bearer <token>'
+```
+
+---
+
+## PUT /api/pendientes/{id}/postergar
+
+Postpone a work order to a future date with an explanatory reason. The state transitions to `POSTERGADO`.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente to postpone.
+</ParamField>
+
+### Request body
+
+<ParamField body="nuevaFecha" type="string" required>
+  New scheduled datetime in ISO 8601 format (e.g. `2026-07-10T09:00:00`). Must be in the future.
+</ParamField>
+
+<ParamField body="empleadoId" type="number">
+  Optional ID of the employee recording the postponement.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the updated `PendienteResponse` with `estado: "POSTERGADO"` and the new `fechaPendiente`.
+
+<Warning>
+  Postponing a work order in `FINALIZADO` state is not permitted. The order must be in a state that allows postponement.
+</Warning>
+
+### Example
+
+```bash cURL
+curl --request PUT \
+  --url https://api.example.com/api/pendientes/42/postergar \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nuevaFecha": "2026-07-10T09:00:00",
+    "empleadoId": 3
+  }'
+```
+
+---
+
+## GET /api/pendientes/{id}/estado-tecnico
+
+Update the `estadoTecnico` (network configuration sub-state) for a work order. Despite the HTTP method, this endpoint changes the technical state and returns the updated pendiente. The new state is passed as a query parameter.
+
+<Note>
+  This endpoint uses `GET` with a `@RequestParam` for the new state. It updates `estadoTecnico` — the PPPoE/VLAN configuration sub-state — independently of the main `estado` lifecycle.
+</Note>
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  ID of the pendiente.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="nuevoEstado" type="string" required>
+  The target `EstadoTecnico` value. One of: `OK`, `PENDIENTE_PPPoE`, `PENDIENTE_VLAN`, `PENDIENTE_PPPoE_Y_VLAN`.
+</ParamField>
+
+### Response — 200 OK
+
+Returns the updated `PendienteResponse` with the new `estadoTecnico` reflected.
+
+### Example
+
+```bash cURL
+curl --request GET \
+  --url 'https://api.example.com/api/pendientes/42/estado-tecnico?nuevoEstado=PENDIENTE_PPPoE' \
+  --header 'Authorization: Bearer <token>'
+```

@@ -1,0 +1,246 @@
+---
+title: 'Clientes — Client Management API Reference'
+description: 'Create, retrieve, update, and soft-delete client records. Supports both individual (PERSONA) and business (EMPRESA) client types with flexible document identification.'
+keywords: ['clients', 'clientes', 'customer management', 'ISP clients', 'API reference']
+---
+
+The Clients API manages the people and organizations that receive field service work orders. Each client record stores contact details, document identification, and a unique client code used across the system. All write operations require authentication.
+
+<Note>
+  All endpoints require a valid Bearer token unless otherwise stated. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## List active clients
+
+<br />
+
+`GET /api/clientes`
+
+Returns a paginated list of all clients where `vigente = true`.
+
+### Query parameters
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of records per page.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="content" type="ClienteResponse[]">
+  Array of client objects for the current page.
+  <Expandable title="ClienteResponse properties">
+    <ResponseField name="id" type="number">Unique numeric identifier.</ResponseField>
+    <ResponseField name="nombre" type="string">Full name or company name.</ResponseField>
+    <ResponseField name="tipoCliente" type="string">Client category: `PERSONA`, `EMPRESA`, or `OTRO`.</ResponseField>
+    <ResponseField name="tipoDocumento" type="string">Document type: `RUC`, `DNI`, `CE`, or `OTRO`.</ResponseField>
+    <ResponseField name="numeroDocumento" type="string">Document number (e.g., DNI or RUC value).</ResponseField>
+    <ResponseField name="codigoCliente" type="string">Internal unique client code (e.g., `CLI001`).</ResponseField>
+    <ResponseField name="direccion" type="string">Primary address.</ResponseField>
+    <ResponseField name="telefono" type="string">Contact phone number.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="contactoRepresentante" type="string">Representative contact name, used for EMPRESA clients.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="totalElements" type="number">Total number of active clients.</ResponseField>
+<ResponseField name="totalPages" type="number">Total number of pages.</ResponseField>
+<ResponseField name="number" type="number">Current page index (zero-based).</ResponseField>
+<ResponseField name="size" type="number">Page size used for this response.</ResponseField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/clientes?page=0&size=20' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Get client by ID
+
+<br />
+
+`GET /api/clientes/{id}`
+
+Returns a single client record.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the client.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/clientes/42' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Create a client
+
+<br />
+
+`POST /api/clientes`
+
+Creates a new active client record. The `codigoCliente` value must be unique across all clients.
+
+### Request body
+
+<ParamField body="nombre" type="string" required>
+  Full name (individual) or company name.
+</ParamField>
+
+<ParamField body="tipoCliente" type="string" required>
+  Client category. One of: `PERSONA`, `EMPRESA`, `OTRO`.
+</ParamField>
+
+<ParamField body="tipoDocumento" type="string" required>
+  Document type. One of: `RUC`, `DNI`, `CE`, `OTRO`.
+</ParamField>
+
+<ParamField body="numeroDocumento" type="string" required>
+  Document number. Must match the format expected for the selected `tipoDocumento`.
+</ParamField>
+
+<ParamField body="codigoCliente" type="string" required>
+  Unique internal code for this client (e.g., `CLI001`).
+</ParamField>
+
+<ParamField body="direccion" type="string">
+  Primary service address.
+</ParamField>
+
+<ParamField body="telefono" type="string">
+  Contact phone number.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Email address.
+</ParamField>
+
+<ParamField body="contactoRepresentante" type="string">
+  Name of the representative or point of contact. Recommended for `EMPRESA` clients.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/clientes' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Empresa Telecom SAC",
+    "tipoCliente": "EMPRESA",
+    "tipoDocumento": "RUC",
+    "numeroDocumento": "20512345678",
+    "codigoCliente": "CLI042",
+    "direccion": "Av. Principal 123, Lima",
+    "telefono": "999888777",
+    "email": "contacto@telecomsac.pe",
+    "contactoRepresentante": "Carlos Mendoza"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Update a client
+
+<br />
+
+`PUT /api/clientes/{id}`
+
+Updates an existing client's information. All fields are accepted; only provided fields are updated.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the client to update.
+</ParamField>
+
+### Request body
+
+Same fields as [Create a client](#create-a-client). All fields are optional on update.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/clientes/42' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "telefono": "987654321",
+    "email": "nuevo@telecomsac.pe"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Delete a client
+
+<br />
+
+`DELETE /api/clientes/{id}`
+
+Soft-deletes a client by setting `vigente = false`. The record is retained in the database and will no longer appear in list responses.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the client to deactivate.
+</ParamField>
+
+<Warning>
+  This operation is a soft delete. The client record is preserved and can be reactivated directly in the database if needed, but it will not appear through the API after deletion.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/clientes/42' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Enumerations
+
+### TipoCliente
+
+| Value | Description |
+|-------|-------------|
+| `PERSONA` | Individual person |
+| `EMPRESA` | Company or organization |
+| `OTRO` | Other client type |
+
+### TipoDocumento
+
+| Value | Description |
+|-------|-------------|
+| `RUC` | Registro Único de Contribuyentes (11 digits) |
+| `DNI` | Documento Nacional de Identidad (8 digits) |
+| `CE` | Carné de Extranjería |
+| `OTRO` | Other document type |

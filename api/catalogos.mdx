@@ -1,0 +1,281 @@
+---
+title: 'Catálogos — Service Catalog & Plan Management API'
+description: 'Create and manage service plans that bundle products into offerings like internet packages, camera kits, or service bundles. Associate products with quantities per catalog.'
+keywords: ['catalogs', 'catalogos', 'service plans', 'internet plans', 'bundles', 'API reference']
+---
+
+The Catalogs API organizes products into service plans or offering bundles. A catalog represents a named service offering (such as a fiber internet plan or a camera installation kit) with a defined type. Products are linked to catalogs with quantities, making it easy to know what materials are required for a given service.
+
+<Note>
+  All endpoints require a valid Bearer token. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## Catalogs
+
+### List active catalogs
+
+`GET /api/catalogos`
+
+Returns all catalogs where `vigente = true`.
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/catalogos' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+#### Response fields
+
+<ResponseField name="id" type="number">Unique catalog ID.</ResponseField>
+<ResponseField name="nombre" type="string">Catalog name (e.g., `Plan Fibra 100 Mbps`).</ResponseField>
+<ResponseField name="descripcion" type="string">Description of the service offering.</ResponseField>
+<ResponseField name="tipo" type="string">Service type. One of: `INTERNET`, `CAMARAS`, `KIT`, `SERVICIO`.</ResponseField>
+<ResponseField name="vigente" type="boolean">`true` if the catalog is active.</ResponseField>
+
+---
+
+### Create a catalog
+
+`POST /api/catalogos`
+
+Creates a new service catalog entry.
+
+<ParamField body="nombre" type="string" required>
+  Catalog name (e.g., `Plan Fibra 100 Mbps`).
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Description of what this catalog includes.
+</ParamField>
+
+<ParamField body="tipo" type="string" required>
+  Service type. One of: `INTERNET`, `CAMARAS`, `KIT`, `SERVICIO`.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/catalogos' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Plan Fibra 100 Mbps",
+    "descripcion": "Residential fiber internet plan up to 100 Mbps symmetric",
+    "tipo": "INTERNET"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Update a catalog
+
+`PUT /api/catalogos/{id}`
+
+Updates an existing catalog's name, description, or type.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the catalog to update.
+</ParamField>
+
+All body fields from [Create a catalog](#create-a-catalog) are accepted.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/catalogos/3' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Plan Fibra 200 Mbps",
+    "descripcion": "Upgraded residential fiber plan up to 200 Mbps symmetric"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Delete a catalog
+
+`DELETE /api/catalogos/{id}`
+
+Soft-deletes a catalog by setting `vigente = false`. Associated catalog-product entries are not automatically removed.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the catalog to deactivate.
+</ParamField>
+
+<Warning>
+  Deactivating a catalog does not remove its associated product entries. If the catalog is reactivated, those product links will still be present.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/catalogos/3' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Catalog products
+
+Each catalog can have one or more products associated with it, along with the expected quantity of each. This defines the materials needed to deliver the service.
+
+---
+
+### List products in a catalog
+
+`GET /api/catalogos/{catalogoId}/productos`
+
+Returns all active product entries for a specific catalog.
+
+<ParamField path="catalogoId" type="number" required>
+  Numeric ID of the catalog.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/catalogos/3/productos' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+#### Response fields
+
+<ResponseField name="id" type="number">Catalog-product link ID.</ResponseField>
+<ResponseField name="catalogo" type="object">
+  The parent catalog.
+  <Expandable title="CatalogoResponse properties">
+    <ResponseField name="id" type="number">Catalog ID.</ResponseField>
+    <ResponseField name="nombre" type="string">Catalog name.</ResponseField>
+    <ResponseField name="descripcion" type="string">Description.</ResponseField>
+    <ResponseField name="tipo" type="string">Service type.</ResponseField>
+    <ResponseField name="vigente" type="boolean">Active status.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="producto" type="object">
+  The associated product. See [ProductoResponse](/api/productos) for field details.
+</ResponseField>
+<ResponseField name="cantidad" type="number">Expected quantity of this product for the service.</ResponseField>
+
+---
+
+### Add a product to a catalog
+
+`POST /api/catalogos/productos`
+
+Associates a product with a catalog and specifies the required quantity.
+
+<ParamField body="catalogoId" type="number" required>
+  ID of the catalog to add the product to.
+</ParamField>
+
+<ParamField body="productoId" type="number" required>
+  ID of the product to associate.
+</ParamField>
+
+<ParamField body="cantidad" type="number" required>
+  Expected quantity of this product for one instance of the service.
+</ParamField>
+
+<Tip>
+  Use this to define a standard material list for each service plan. For example, a fiber installation plan might require 1 router, 2 patch cables, and 1 ONT device.
+</Tip>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/catalogos/productos' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "catalogoId": 3,
+    "productoId": 7,
+    "cantidad": 1
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Update a catalog product entry
+
+`PUT /api/catalogos/productos/{id}`
+
+Updates the quantity (or other fields) of an existing catalog-product link.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the catalog-product link to update.
+</ParamField>
+
+<ParamField body="cantidad" type="number">
+  Updated quantity.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/catalogos/productos/12' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "cantidad": 2
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Remove a product from a catalog
+
+`DELETE /api/catalogos/productos/{id}`
+
+Removes the association between a product and a catalog. This is a permanent removal (not a soft delete) of the link, not the product itself.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the catalog-product link to remove.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/catalogos/productos/12' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Enumerations
+
+### TipoCatalogo
+
+| Value | Description |
+|-------|-------------|
+| `INTERNET` | Internet service plans |
+| `CAMARAS` | Security camera installation packages |
+| `KIT` | Equipment kits |
+| `SERVICIO` | General service offerings |

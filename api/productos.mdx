@@ -1,0 +1,321 @@
+---
+title: 'Productos — Product Catalog & Work Order Items'
+description: 'Manage inventory products with barcode support and track materials consumed in individual work orders through the pendiente items sub-resource.'
+keywords: ['products', 'productos', 'inventory', 'materials', 'pendiente items', 'work order', 'API reference']
+---
+
+The Products API has two areas: the product catalog (materials and equipment tracked in inventory) and pendiente items (the specific quantities of products used in a given work order). Products are identified by barcode and have a unit cost. When a technician uses materials on a job, those are recorded as items on the pendiente.
+
+<Note>
+  All endpoints require a valid Bearer token. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## Products
+
+### List active products
+
+`GET /api/productos`
+
+Returns a paginated list of active products.
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of records per page.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/productos?page=0&size=20' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+#### Response fields
+
+<ResponseField name="id" type="number">Unique product ID.</ResponseField>
+<ResponseField name="codigoBarra" type="string">Barcode identifier.</ResponseField>
+<ResponseField name="nombre" type="string">Product name.</ResponseField>
+<ResponseField name="descripcion" type="string">Product description.</ResponseField>
+<ResponseField name="costoUnitario" type="number">Unit cost in the local currency.</ResponseField>
+<ResponseField name="vigente" type="boolean">`true` if the product is active.</ResponseField>
+
+---
+
+### Get product by ID
+
+`GET /api/productos/{id}`
+
+Returns a single product record.
+
+<ParamField path="id" type="number" required>
+  Numeric product ID.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/productos/7' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+### Create a product
+
+`POST /api/productos`
+
+Adds a new product to the catalog.
+
+<ParamField body="codigoBarra" type="string" required>
+  Unique barcode string for the product.
+</ParamField>
+
+<ParamField body="nombre" type="string" required>
+  Product name (e.g., `Router TP-Link TL-WR840N`).
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Additional product description.
+</ParamField>
+
+<ParamField body="costoUnitario" type="number" required>
+  Unit cost. Use a decimal value (e.g., `45.00`).
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/productos' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "codigoBarra": "7501234567890",
+    "nombre": "Router TP-Link TL-WR840N",
+    "descripcion": "Wireless N router 300 Mbps, dual antenna",
+    "costoUnitario": 45.00
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Update a product
+
+`PUT /api/productos/{id}`
+
+Updates an existing product record.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the product to update.
+</ParamField>
+
+All body fields from [Create a product](#create-a-product) are accepted. Only included fields are updated.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/productos/7' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "costoUnitario": 48.50
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Delete a product
+
+`DELETE /api/productos/{id}`
+
+Soft-deletes a product by setting `vigente = false`.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the product to deactivate.
+</ParamField>
+
+<Warning>
+  Deactivating a product does not remove it from existing pendiente item records. Historical usage data is preserved.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/productos/7' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Pendiente items
+
+Pendiente items record which products (and in what quantity) were used in a specific work order (pendiente). They link a product to a pendiente with cost details.
+
+---
+
+### List items for a pendiente
+
+`GET /api/productos/pendientes/{pendienteId}/items`
+
+Returns all active items associated with a specific work order.
+
+<ParamField path="pendienteId" type="number" required>
+  The ID of the work order (pendiente) to retrieve items for.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/productos/pendientes/15/items' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+#### Response fields
+
+<ResponseField name="id" type="number">Item ID.</ResponseField>
+<ResponseField name="pendienteId" type="number">ID of the associated work order.</ResponseField>
+<ResponseField name="producto" type="object">
+  The product used.
+  <Expandable title="ProductoResponse properties">
+    <ResponseField name="id" type="number">Product ID.</ResponseField>
+    <ResponseField name="codigoBarra" type="string">Barcode.</ResponseField>
+    <ResponseField name="nombre" type="string">Product name.</ResponseField>
+    <ResponseField name="descripcion" type="string">Description.</ResponseField>
+    <ResponseField name="costoUnitario" type="number">Unit cost.</ResponseField>
+    <ResponseField name="vigente" type="boolean">Active status.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="descripcion" type="string">Notes about this specific usage.</ResponseField>
+<ResponseField name="cantidad" type="number">Quantity used.</ResponseField>
+<ResponseField name="costoUnitario" type="number">Unit cost at time of use (may differ from current product cost).</ResponseField>
+<ResponseField name="costoTotal" type="number">Total cost: `cantidad × costoUnitario`.</ResponseField>
+
+---
+
+### Create a pendiente item
+
+`POST /api/productos/pendientes/items`
+
+Records a product as having been used in a work order.
+
+<ParamField body="pendienteId" type="number" required>
+  ID of the work order.
+</ParamField>
+
+<ParamField body="productoId" type="number" required>
+  ID of the product used.
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Notes about this usage (e.g., installation details).
+</ParamField>
+
+<ParamField body="cantidad" type="number" required>
+  Quantity of the product used.
+</ParamField>
+
+<ParamField body="costoUnitario" type="number" required>
+  Unit cost at the time of use. Store the current price to preserve cost history.
+</ParamField>
+
+<ParamField body="costoTotal" type="number" required>
+  Total cost. Should equal `cantidad × costoUnitario`.
+</ParamField>
+
+<Tip>
+  Always record `costoUnitario` at the time of use rather than relying on the product's current price. This preserves accurate cost history even if product prices change later.
+</Tip>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/productos/pendientes/items' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "pendienteId": 15,
+    "productoId": 7,
+    "descripcion": "Router installed at client premises",
+    "cantidad": 1,
+    "costoUnitario": 45.00,
+    "costoTotal": 45.00
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Update a pendiente item
+
+`PUT /api/productos/pendientes/items/{id}`
+
+Updates an existing pendiente item (e.g., to correct quantity or cost).
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the pendiente item to update.
+</ParamField>
+
+All body fields from [Create a pendiente item](#create-a-pendiente-item) are accepted.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/productos/pendientes/items/88' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "cantidad": 2,
+    "costoTotal": 90.00
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Delete a pendiente item
+
+`DELETE /api/productos/pendientes/items/{id}`
+
+Soft-deletes a pendiente item.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the item to deactivate.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/productos/pendientes/items/88' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>

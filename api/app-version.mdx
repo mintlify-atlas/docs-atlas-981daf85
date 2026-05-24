@@ -1,0 +1,164 @@
+---
+title: 'App Version — Mobile App Version Management API'
+description: 'Manage and query mobile app version records for Android and other platforms. Control which versions are active, flag mandatory updates, and expose public endpoints for version checking.'
+keywords: ['app version', 'mobile app', 'version control', 'update management', 'Android', 'API reference']
+---
+
+The App Version API manages version records for the mobile application. It tracks which versions have been published, whether an update is mandatory, and which platform a version targets. Two endpoints on this path are public (no authentication required), making them suitable for the mobile app to call at startup to check for required updates.
+
+<Note>
+  Endpoints under `/app/app-version` that are marked **public** do not require authentication and can be called by the mobile app without a Bearer token. All other endpoints require authentication.
+</Note>
+
+---
+
+## List active versions (public)
+
+`GET /app/app-version/vigentes`
+
+Returns a paginated list of active app version records. This endpoint is **public** — no Bearer token is required.
+
+This is useful for displaying a version history or checking which versions are currently supported.
+
+### Query parameters
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of records per page.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="id" type="number">Unique version record ID.</ResponseField>
+<ResponseField name="versionCode" type="string">Semantic version string (e.g., `1.2.0`).</ResponseField>
+<ResponseField name="plataforma" type="string">Target platform (e.g., `ANDROID`).</ResponseField>
+<ResponseField name="obligatoria" type="boolean">`true` if users must update to this version before continuing to use the app.</ResponseField>
+<ResponseField name="descripcion" type="string">Release notes or change summary.</ResponseField>
+<ResponseField name="fechaPublicacion" type="string">Publication datetime in ISO 8601 format.</ResponseField>
+<ResponseField name="vigente" type="boolean">`true` if this version record is active.</ResponseField>
+
+<CodeGroup>
+
+```bash cURL (no auth required)
+curl --request GET \
+  --url 'https://your-api.example.com/app/app-version/vigentes?page=0&size=10'
+```
+
+</CodeGroup>
+
+---
+
+## Get latest version (public)
+
+`GET /app/app-version/ultima`
+
+Returns the most recently registered version record. This endpoint is **public** — no Bearer token is required.
+
+Use this endpoint in the mobile app's startup routine to check whether a newer (or mandatory) version is available.
+
+<Tip>
+  On app launch, call this endpoint and compare the returned `versionCode` against the currently installed version. If `obligatoria` is `true` and the installed version is older, prompt the user to update before proceeding.
+</Tip>
+
+<CodeGroup>
+
+```bash cURL (no auth required)
+curl --request GET \
+  --url 'https://your-api.example.com/app/app-version/ultima'
+```
+
+</CodeGroup>
+
+#### Example response
+
+```json
+{
+  "id": 15,
+  "versionCode": "2.1.0",
+  "plataforma": "ANDROID",
+  "obligatoria": true,
+  "descripcion": "Critical security fix — update required.",
+  "fechaPublicacion": "2026-05-20",
+  "vigente": true
+}
+```
+
+---
+
+## Create a version record
+
+`POST /app/app-version`
+
+Registers a new app version. **Requires authentication.**
+
+### Request body
+
+<ParamField body="versionCode" type="string" required>
+  Semantic version string (e.g., `1.2.0`, `2.0.1`). Follow [semver](https://semver.org) conventions.
+</ParamField>
+
+<ParamField body="plataforma" type="string" required>
+  Target mobile platform (e.g., `ANDROID`).
+</ParamField>
+
+<ParamField body="obligatoria" type="boolean" required>
+  Set to `true` to mark this as a mandatory update. Users on older versions will be forced to update.
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Release notes or description of changes in this version.
+</ParamField>
+
+<ParamField body="fechaPublicacion" type="string" required>
+  Publication datetime in ISO 8601 format (e.g. `2026-05-24T00:00:00`).
+</ParamField>
+
+<ParamField body="vigente" type="boolean">
+  Whether this version record is active. Defaults to `true` for new records.
+</ParamField>
+
+<Warning>
+  Setting `obligatoria: true` means all mobile users on older versions will be required to update before using the app. Use this only for critical fixes or breaking changes.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/app/app-version' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "versionCode": "2.1.0",
+    "plataforma": "ANDROID",
+    "obligatoria": true,
+    "descripcion": "Critical security fix and performance improvements.",
+    "fechaPublicacion": "2026-05-24T00:00:00"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Typical mobile startup workflow
+
+The following sequence shows how a mobile app should use these endpoints on startup:
+
+<Steps>
+  <Step title="Call GET /app/app-version/ultima">
+    Fetch the latest version record. No token required.
+  </Step>
+  <Step title="Compare versions">
+    Compare the returned `versionCode` to the installed version.
+  </Step>
+  <Step title="Check obligatoria flag">
+    If the latest version has `obligatoria: true` and the installed version is older, block app access and redirect the user to the app store.
+  </Step>
+  <Step title="Proceed normally">
+    If the installed version is current or the update is not mandatory, continue with normal app initialization (authenticate the user, fetch modules, etc.).
+  </Step>
+</Steps>

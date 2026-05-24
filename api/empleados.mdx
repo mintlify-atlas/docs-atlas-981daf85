@@ -1,0 +1,277 @@
+---
+title: 'Empleados — Employee & Cargo Management API'
+description: 'Manage field technicians and office staff. Create and assign job positions (cargos), track hire dates, and maintain the workforce behind every work order.'
+keywords: ['employees', 'empleados', 'staff', 'cargo', 'job title', 'technician', 'API reference']
+---
+
+The Employees API manages the internal workforce — technicians, supervisors, and administrators — who execute and coordinate field work orders. Each employee is associated with a `cargo` (job title/position). Cargos are managed through a separate set of sub-endpoints on the same base path.
+
+<Note>
+  All endpoints require a valid Bearer token. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## Employees
+
+### Create an employee
+
+`POST /api/empleados`
+
+Creates a new active employee record.
+
+<ParamField body="nombre" type="string" required>
+  First name of the employee.
+</ParamField>
+
+<ParamField body="apellidoPaterno" type="string" required>
+  Paternal surname.
+</ParamField>
+
+<ParamField body="apellidoMaterno" type="string" required>
+  Maternal surname.
+</ParamField>
+
+<ParamField body="telefono" type="string">
+  Contact phone number.
+</ParamField>
+
+<ParamField body="correo" type="string">
+  Work email address.
+</ParamField>
+
+<ParamField body="cargoId" type="number" required>
+  ID of the cargo (position) to assign. Use `GET /api/empleados/cargos` to retrieve valid IDs.
+</ParamField>
+
+<ParamField body="fechaIngreso" type="string" required>
+  Start date in `YYYY-MM-DD` format (e.g., `2026-01-15`).
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/empleados' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Luis",
+    "apellidoPaterno": "Torres",
+    "apellidoMaterno": "Quispe",
+    "telefono": "999111222",
+    "correo": "ltorres@empresa.pe",
+    "cargoId": 2,
+    "fechaIngreso": "2026-03-01"
+  }'
+```
+
+</CodeGroup>
+
+#### Response
+
+<ResponseField name="id" type="number">Unique employee ID.</ResponseField>
+<ResponseField name="nombre" type="string">First name.</ResponseField>
+<ResponseField name="apellidoPaterno" type="string">Paternal surname.</ResponseField>
+<ResponseField name="apellidoMaterno" type="string">Maternal surname.</ResponseField>
+<ResponseField name="telefono" type="string">Phone number.</ResponseField>
+<ResponseField name="correo" type="string">Email address.</ResponseField>
+<ResponseField name="cargo" type="object">
+  Assigned position.
+  <Expandable title="CargoResponse properties">
+    <ResponseField name="id" type="number">Cargo ID.</ResponseField>
+    <ResponseField name="nombre" type="string">Position name (e.g., `Técnico`).</ResponseField>
+    <ResponseField name="descripcion" type="string">Description of the role.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="fechaIngreso" type="string">Hire date in `YYYY-MM-DD` format.</ResponseField>
+<ResponseField name="vigente" type="boolean">`true` if the record is active.</ResponseField>
+
+---
+
+### List active employees
+
+`GET /api/empleados`
+
+Returns all employees where `vigente = true`.
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/empleados' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+### Update an employee
+
+`PUT /api/empleados/{id}`
+
+Updates an existing employee's information.
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the employee to update.
+</ParamField>
+
+All request body fields from [Create an employee](#create-an-employee) are accepted. Only the fields you include are updated.
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/empleados/5' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "telefono": "988776655",
+    "cargoId": 3
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Delete an employee
+
+`DELETE /api/empleados/{id}`
+
+Soft-deletes an employee by setting `vigente = false`. The record is preserved in the database.
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the employee to deactivate.
+</ParamField>
+
+<Warning>
+  Deactivating an employee does not unassign them from pending work orders. Reassign open work orders before deactivating.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/empleados/5' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Cargos (Job Positions)
+
+Cargos represent job titles or positions within the organization. Every employee must be assigned a cargo.
+
+---
+
+### Create a cargo
+
+`POST /api/empleados/cargo`
+
+Creates a new job position.
+
+<ParamField body="nombre" type="string" required>
+  Position name (e.g., `Técnico de Campo`).
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Description of the responsibilities for this position.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/empleados/cargo' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Técnico de Campo",
+    "descripcion": "Responsable de instalaciones y mantenimiento en campo"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### List active cargos
+
+`GET /api/empleados/cargos`
+
+Returns all job positions where `vigente = true`.
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/empleados/cargos' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+### Update a cargo
+
+`PUT /api/empleados/cargo/{id}`
+
+Updates an existing job position.
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the cargo to update.
+</ParamField>
+
+<ParamField body="nombre" type="string">
+  Updated position name.
+</ParamField>
+
+<ParamField body="descripcion" type="string">
+  Updated description.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url 'https://your-api.example.com/api/empleados/cargo/2' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "nombre": "Técnico Senior",
+    "descripcion": "Técnico con experiencia en configuraciones avanzadas"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Delete a cargo
+
+`DELETE /api/empleados/cargo/{id}`
+
+Soft-deletes a job position by setting `vigente = false`.
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the cargo to deactivate.
+</ParamField>
+
+<Warning>
+  Do not deactivate a cargo that still has active employees assigned to it. Reassign those employees first.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/empleados/cargo/2' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>

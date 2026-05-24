@@ -1,0 +1,216 @@
+---
+title: 'Notificaciones — In-App Notification Management API'
+description: 'Send, list, and manage in-app notifications for users. Filter by read status, mark notifications as read, and deliver alerts ranging from informational messages to error warnings.'
+keywords: ['notifications', 'notificaciones', 'in-app alerts', 'read status', 'messaging', 'API reference']
+---
+
+The Notifications API delivers in-app messages to specific users. Notifications have a type (`INFO`, `SUCCESS`, `WARNING`, `ERROR`) and a read state (`NO_LEIDO`, `LEIDO`). The most common workflow is to fetch a user's unread notifications on app load and then mark them as read when viewed.
+
+<Note>
+  All endpoints require a valid Bearer token. Include `Authorization: Bearer <token>` in every request header.
+</Note>
+
+---
+
+## Create a notification
+
+`POST /api/notificaciones`
+
+Creates and delivers a new notification to a specific user.
+
+### Request body
+
+<ParamField body="titulo" type="string" required>
+  Notification title — displayed as the headline in the notification UI.
+</ParamField>
+
+<ParamField body="mensaje" type="string" required>
+  Full notification message body.
+</ParamField>
+
+<ParamField body="tipo" type="string" required>
+  Notification type. Controls visual styling. One of: `INFO`, `SUCCESS`, `WARNING`, `ERROR`.
+</ParamField>
+
+<ParamField body="usuarioId" type="number" required>
+  ID of the user who should receive the notification.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url 'https://your-api.example.com/api/notificaciones' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "titulo": "Nuevo pendiente asignado",
+    "mensaje": "Se te ha asignado la orden de trabajo #47 en Av. Los Pinos 250.",
+    "tipo": "INFO",
+    "usuarioId": 12
+  }'
+```
+
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="number">Unique notification ID.</ResponseField>
+<ResponseField name="titulo" type="string">Notification title.</ResponseField>
+<ResponseField name="mensaje" type="string">Notification message body.</ResponseField>
+<ResponseField name="tipo" type="string">Type: `INFO`, `SUCCESS`, `WARNING`, or `ERROR`.</ResponseField>
+<ResponseField name="estado" type="string">Read state: `NO_LEIDO` (unread) or `LEIDO` (read).</ResponseField>
+<ResponseField name="fechaCreacion" type="string">ISO 8601 timestamp when the notification was created.</ResponseField>
+<ResponseField name="usuarioId" type="number">ID of the recipient user.</ResponseField>
+
+---
+
+## List all active notifications
+
+`GET /api/notificaciones`
+
+Returns all notifications where `vigente = true`, across all users. Intended for admin use.
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://your-api.example.com/api/notificaciones' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## List notifications for a user
+
+`GET /api/notificaciones/usuario/{usuarioId}`
+
+Returns paginated notifications for a specific user. Use the `estado` query parameter to filter by read status — the most common use case is fetching unread notifications on app startup.
+
+### Path parameters
+
+<ParamField path="usuarioId" type="number" required>
+  ID of the user whose notifications to retrieve.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="estado" type="string">
+  Filter by read status. Pass `NO_LEIDO` to retrieve only unread notifications. Omit to return all.
+</ParamField>
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page index.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of records per page.
+</ParamField>
+
+<CodeGroup>
+
+```bash Unread only
+curl --request GET \
+  --url 'https://your-api.example.com/api/notificaciones/usuario/12?estado=NO_LEIDO' \
+  --header 'Authorization: Bearer <token>'
+```
+
+```bash All notifications
+curl --request GET \
+  --url 'https://your-api.example.com/api/notificaciones/usuario/12?page=0&size=20' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Update a notification
+
+`PUT /api/notificaciones/{id}`
+
+Updates a notification record. The primary use case is marking a notification as read by changing `estado` from `NO_LEIDO` to `LEIDO`.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the notification to update.
+</ParamField>
+
+### Request body
+
+<ParamField body="estado" type="string">
+  Updated read state. Pass `LEIDO` to mark as read.
+</ParamField>
+
+<ParamField body="titulo" type="string">
+  Updated title.
+</ParamField>
+
+<ParamField body="mensaje" type="string">
+  Updated message body.
+</ParamField>
+
+<Tip>
+  To implement a "mark all as read" feature, iterate over unread notifications returned from `GET /api/notificaciones/usuario/{id}?estado=NO_LEIDO` and call this endpoint for each one with `{ "estado": "LEIDO" }`.
+</Tip>
+
+<CodeGroup>
+
+```bash Mark as read
+curl --request PUT \
+  --url 'https://your-api.example.com/api/notificaciones/55' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "estado": "LEIDO"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Delete a notification
+
+`DELETE /api/notificaciones/{id}`
+
+Soft-deletes a notification by setting `vigente = false`. The record is retained in the database but will no longer appear in list responses.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the notification to deactivate.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url 'https://your-api.example.com/api/notificaciones/55' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Enumerations
+
+### Notification types
+
+| Value | Description | Typical use |
+|-------|-------------|-------------|
+| `INFO` | Informational message | Assignment updates, status changes |
+| `SUCCESS` | Success confirmation | Work order completed, payment recorded |
+| `WARNING` | Caution or advisory | Approaching deadlines, missing data |
+| `ERROR` | Error or failure alert | Sync failure, configuration error |
+
+### Notification states
+
+| Value | Description |
+|-------|-------------|
+| `NO_LEIDO` | Unread — notification has not been seen by the user |
+| `LEIDO` | Read — user has viewed the notification |
